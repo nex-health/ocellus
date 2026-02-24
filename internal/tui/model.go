@@ -43,6 +43,8 @@ type pollResultMsg struct {
 	errors    []string
 }
 
+type pendingKeyTimeoutMsg struct{}
+
 // Config holds the parameters for the TUI.
 type Config struct {
 	Filter      cilium.Filter
@@ -75,6 +77,7 @@ type Model struct {
 	searchQuery string
 	showHelp   bool
 	lastErrors []string
+	pendingKey string // for multi-key chords like "gg"
 }
 
 // New creates a new Model from the given config.
@@ -173,6 +176,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tickAfter(m.config.Interval)
 
+	case pendingKeyTimeoutMsg:
+		m.pendingKey = ""
+		return m, nil
+
 	case tea.KeyMsg:
 		// Global keybindings.
 		switch msg.String() {
@@ -240,7 +247,28 @@ func (m *Model) clampPodScroll() {
 }
 
 func (m Model) updatePodList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Handle pending key chord.
+	if m.pendingKey == "g" {
+		m.pendingKey = ""
+		if msg.String() == "g" {
+			m.cursor = 0
+			m.clampPodScroll()
+			return m, nil
+		}
+		// Not 'g' — fall through to normal handling.
+	}
+
 	switch msg.String() {
+	case "g":
+		m.pendingKey = "g"
+		return m, pendingKeyTimeout()
+	case "G":
+		m.cursor = len(m.config.Pods) - 1
+		if m.cursor < 0 {
+			m.cursor = 0
+		}
+		m.clampPodScroll()
+		return m, nil
 	case "j", "down":
 		if m.cursor < len(m.config.Pods)-1 {
 			m.cursor++
@@ -308,7 +336,25 @@ func (m Model) updatePeerList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Handle pending key chord (only when not searching).
+	if m.pendingKey == "g" {
+		m.pendingKey = ""
+		if msg.String() == "g" {
+			m.paused = true
+			m.scroll = 0
+			return m, nil
+		}
+		// Not 'g' — fall through to normal handling.
+	}
+
 	switch msg.String() {
+	case "g":
+		m.pendingKey = "g"
+		return m, pendingKeyTimeout()
+	case "G":
+		m.paused = true
+		m.scroll = m.maxScroll()
+		return m, nil
 	case "j", "down":
 		m.paused = true
 		m.scroll++

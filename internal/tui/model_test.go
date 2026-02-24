@@ -936,6 +936,125 @@ func TestPeerViewStatusBarNoSortLabel(t *testing.T) {
 	}
 }
 
+func TestGGJumpsToTopPodList(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 24
+
+	// Move cursor to last pod.
+	m.cursor = 2
+
+	// Press g, then g again.
+	updated, _ := m.Update(keyMsg("g"))
+	m2 := updated.(Model)
+	updated, _ = m2.Update(keyMsg("g"))
+	m3 := updated.(Model)
+	if m3.cursor != 0 {
+		t.Errorf("cursor = %d after gg, want 0", m3.cursor)
+	}
+}
+
+func TestGJumpsToBottomPodList(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 24
+
+	// Press G (uppercase).
+	updated, _ := m.Update(keyMsg("G"))
+	m2 := updated.(Model)
+	if m2.cursor != len(m2.config.Pods)-1 {
+		t.Errorf("cursor = %d after G, want %d", m2.cursor, len(m2.config.Pods)-1)
+	}
+}
+
+func TestGGJumpsToTopPeerView(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 12
+	m.mode = viewPeers
+	var peers []cilium.Peer
+	for i := 0; i < 30; i++ {
+		peers = append(peers, cilium.Peer{
+			Src:     fmt.Sprintf("10.1.0.%d:%d", i, 1000+i),
+			DstPort: 5432,
+		})
+	}
+	m.peers["pod-1"] = peers
+	m.scroll = 10
+
+	// Press g, then g.
+	updated, _ := m.Update(keyMsg("g"))
+	m2 := updated.(Model)
+	updated, _ = m2.Update(keyMsg("g"))
+	m3 := updated.(Model)
+	if m3.scroll != 0 {
+		t.Errorf("scroll = %d after gg, want 0", m3.scroll)
+	}
+}
+
+func TestGJumpsToBottomPeerView(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 12
+	m.mode = viewPeers
+	var peers []cilium.Peer
+	for i := 0; i < 30; i++ {
+		peers = append(peers, cilium.Peer{
+			Src:     fmt.Sprintf("10.1.0.%d:%d", i, 1000+i),
+			DstPort: 5432,
+		})
+	}
+	m.peers["pod-1"] = peers
+
+	updated, _ := m.Update(keyMsg("G"))
+	m2 := updated.(Model)
+	if m2.scroll != m2.maxScroll() {
+		t.Errorf("scroll = %d after G, want %d", m2.scroll, m2.maxScroll())
+	}
+}
+
+func TestPendingKeyTimeout(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 24
+
+	// Press g.
+	updated, cmd := m.Update(keyMsg("g"))
+	m2 := updated.(Model)
+	if m2.pendingKey != "g" {
+		t.Errorf("pendingKey = %q, want 'g'", m2.pendingKey)
+	}
+	if cmd == nil {
+		t.Error("pressing g should return a timeout command")
+	}
+
+	// Timeout fires — pending key should clear.
+	updated, _ = m2.Update(pendingKeyTimeoutMsg{})
+	m3 := updated.(Model)
+	if m3.pendingKey != "" {
+		t.Errorf("pendingKey = %q after timeout, want empty", m3.pendingKey)
+	}
+}
+
+func TestPendingKeyCancelledByOtherKey(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 24
+	m.cursor = 0
+
+	// Press g, then j (not g — should cancel pending and process j).
+	updated, _ := m.Update(keyMsg("g"))
+	m2 := updated.(Model)
+	updated, _ = m2.Update(keyMsg("j"))
+	m3 := updated.(Model)
+	if m3.pendingKey != "" {
+		t.Errorf("pendingKey = %q, want empty (cancelled)", m3.pendingKey)
+	}
+	if m3.cursor != 1 {
+		t.Errorf("cursor = %d, want 1 (j should still navigate)", m3.cursor)
+	}
+}
+
 func TestShiftTabJumpsToPrevPodWithPeers(t *testing.T) {
 	m := testModel()
 	m.width = 80
