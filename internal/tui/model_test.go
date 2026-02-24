@@ -735,6 +735,27 @@ func TestPollResultWithEmptyPods(t *testing.T) {
 	}
 }
 
+func TestPollResultShowsErrors(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 24
+
+	updated, _ := m.Update(pollResultMsg{
+		peers:     map[string][]cilium.Peer{},
+		timestamp: time.Now(),
+		errors:    []string{"pod discovery: connection refused"},
+	})
+	m2 := updated.(Model)
+	if len(m2.lastErrors) != 1 {
+		t.Fatalf("lastErrors len = %d, want 1", len(m2.lastErrors))
+	}
+
+	view := m2.View()
+	if !strings.Contains(view, "connection refused") {
+		t.Error("View should display poll error")
+	}
+}
+
 func TestShiftTabJumpsToPrevPodWithPeers(t *testing.T) {
 	m := testModel()
 	m.width = 80

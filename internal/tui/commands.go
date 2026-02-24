@@ -1,0 +1,102 @@
+package tui
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/aurelcanciu/ocellus/internal/cilium"
+	"github.com/aurelcanciu/ocellus/internal/k8s"
+)
+
+// ClusterClient combines the interfaces needed for polling.
+type ClusterClient interface {
+	k8s.KubeClient
+	Exec(ctx context.Context, namespace, pod, container string, cmd []string) (string, error)
+}
+
+func pollCmd(client ClusterClient, namespace string, target k8s.Target, filter cilium.Filter, pods []k8s.PodInfo, exited map[string]bool, timeout time.Duration) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		if timeout > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, timeout)
+			defer cancel()
+		}
+
+		// Group active pods by node.
+		nodeGroups := make(map[string][]k8s.PodInfo)
+		for _, p := range pods {
+			if !exited[p.Name] {
+				nodeGroups[p.Node] = append(nodeGroups[p.Node], p)
+			}
+		}
+
+		var mu sync.Mutex
+		peerResults := make(map[string][]cilium.Peer)
+		var pollErrors []string
+		var wg sync.WaitGroup
+
+		for node, nodePods := range nodeGroups {
+			wg.Add(1)
+			go func(node string, nodePods []k8s.PodInfo) {
+				defer wg.Done()
+				agentName, err := cilium.FindCiliumAgent(ctx, client, node)
+				if err != nil {
+					mu.Lock()
+					pollErrors = append(pollErrors, fmt.Sprintf("node %s: %v", node, err))
+					mu.Unlock()
+					return
+				}
+				ctOutput, err := cilium.QueryNode(ctx, client, agentName)
+				if err != nil {
+					mu.Lock()
+					pollErrors = append(pollErrors, fmt.Sprintf("node %s: %v", node, err))
+					mu.Unlock()
+					return
+				}
+				mu.Lock()
+				defer mu.Unlock()
+				for _, p := range nodePods {
+					peers := cilium.ParseCTOutput(ctOutput, p.IP, filter)
+					peerResults[p.Name] = peers
+				}
+			}(node, nodePods)
+		}
+		wg.Wait()
+
+		// Check for exited pods.
+		newExited := make(map[string]bool)
+		currentPods, err := k8s.DiscoverPods(ctx, client, namespace, target)
+		if err != nil {
+			mu.Lock()
+			pollErrors = append(pollErrors, fmt.Sprintf("pod discovery: %v", err))
+			mu.Unlock()
+		} else {
+			currentNames := make(map[string]bool)
+			for _, p := range currentPods {
+				currentNames[p.Name] = true
+			}
+			for _, p := range pods {
+				if !exited[p.Name] && !currentNames[p.Name] {
+					newExited[p.Name] = true
+				}
+			}
+		}
+
+		return pollResultMsg{
+			peers:     peerResults,
+			exited:    newExited,
+			timestamp: time.Now().UTC(),
+			errors:    pollErrors,
+		}
+	}
+}
+
+func tickAfter(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(t time.Time) tea.Msg {
+		return tickMsg{}
+	})
+}
