@@ -756,6 +756,46 @@ func TestPollResultShowsErrors(t *testing.T) {
 	}
 }
 
+func TestSortCacheInvalidatedOnNewData(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 24
+	m.mode = viewPeers
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.2:2000", DstPort: 5432},
+		{Src: "10.1.0.1:1000", DstPort: 5432},
+	}
+
+	// Get initial sorted peers.
+	peers1 := m.selectedPeers()
+	if len(peers1) != 2 {
+		t.Fatalf("expected 2 peers, got %d", len(peers1))
+	}
+	if peers1[0].Src != "10.1.0.1:1000" {
+		t.Errorf("peers[0] = %s, want 10.1.0.1:1000 (sorted)", peers1[0].Src)
+	}
+
+	// Simulate new poll data.
+	updated, _ := m.Update(pollResultMsg{
+		peers: map[string][]cilium.Peer{
+			"pod-1": {
+				{Src: "10.1.0.3:3000", DstPort: 5432},
+				{Src: "10.1.0.1:1000", DstPort: 5432},
+				{Src: "10.1.0.2:2000", DstPort: 5432},
+			},
+		},
+		timestamp: time.Now(),
+	})
+	m2 := updated.(Model)
+	peers2 := m2.selectedPeers()
+	if len(peers2) != 3 {
+		t.Fatalf("expected 3 peers after update, got %d", len(peers2))
+	}
+	if peers2[0].Src != "10.1.0.1:1000" {
+		t.Errorf("peers[0] = %s, want 10.1.0.1:1000", peers2[0].Src)
+	}
+}
+
 func TestShiftTabJumpsToPrevPodWithPeers(t *testing.T) {
 	m := testModel()
 	m.width = 80
