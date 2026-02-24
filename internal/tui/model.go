@@ -288,6 +288,29 @@ func (m Model) updatePodList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.clampPodScroll()
 		return m, nil
+	case "H":
+		m.cursor = m.podScroll
+		return m, nil
+	case "M":
+		mid := m.podScroll + m.podPaneHeight()/2
+		if mid >= len(m.config.Pods) {
+			mid = len(m.config.Pods) - 1
+		}
+		if mid < 0 {
+			mid = 0
+		}
+		m.cursor = mid
+		return m, nil
+	case "L":
+		bottom := m.podScroll + m.podPaneHeight() - 1
+		if bottom >= len(m.config.Pods) {
+			bottom = len(m.config.Pods) - 1
+		}
+		if bottom < 0 {
+			bottom = 0
+		}
+		m.cursor = bottom
+		return m, nil
 	case "j", "down":
 		if m.cursor < len(m.config.Pods)-1 {
 			m.cursor++
@@ -387,6 +410,20 @@ func (m Model) updatePeerList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.scroll < 0 {
 			m.scroll = 0
 		}
+		return m, nil
+	case "H":
+		m.paused = true
+		// Already at top of visible — no-op for scroll.
+		return m, nil
+	case "M":
+		m.paused = true
+		m.scroll += m.peerPaneHeight() / 2
+		m.clampScroll()
+		return m, nil
+	case "L":
+		m.paused = true
+		m.scroll += m.peerPaneHeight() - 1
+		m.clampScroll()
 		return m, nil
 	case "j", "down":
 		m.paused = true

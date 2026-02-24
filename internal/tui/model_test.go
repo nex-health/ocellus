@@ -1140,6 +1140,98 @@ func TestCtrlDHalfPageDownPeerView(t *testing.T) {
 	}
 }
 
+func TestHMLPodList(t *testing.T) {
+	pods := make([]k8s.PodInfo, 20)
+	for i := range pods {
+		pods[i] = k8s.PodInfo{Name: fmt.Sprintf("pod-%d", i), Node: "node-a", IP: fmt.Sprintf("10.0.0.%d", i)}
+	}
+	m := New(Config{
+		Filter:   cilium.Filter{PortMin: 5432, PortMax: 5432},
+		Interval: 10 * time.Second,
+		Pods:     pods,
+	})
+	m.width = 80
+	m.height = 24
+	m.cursor = 10
+	m.podScroll = 5
+
+	// H — top of visible area.
+	updated, _ := m.Update(keyMsg("H"))
+	m2 := updated.(Model)
+	if m2.cursor != m2.podScroll {
+		t.Errorf("H: cursor = %d, want %d (top of visible)", m2.cursor, m2.podScroll)
+	}
+
+	// L — bottom of visible area.
+	m.cursor = 5
+	updated, _ = m.Update(keyMsg("L"))
+	m3 := updated.(Model)
+	expected := m3.podScroll + m3.podPaneHeight() - 1
+	if expected >= len(m3.config.Pods) {
+		expected = len(m3.config.Pods) - 1
+	}
+	if m3.cursor != expected {
+		t.Errorf("L: cursor = %d, want %d (bottom of visible)", m3.cursor, expected)
+	}
+
+	// M — middle of visible area.
+	m.cursor = 5
+	updated, _ = m.Update(keyMsg("M"))
+	m4 := updated.(Model)
+	mid := m4.podScroll + m4.podPaneHeight()/2
+	if mid >= len(m4.config.Pods) {
+		mid = len(m4.config.Pods) - 1
+	}
+	if m4.cursor != mid {
+		t.Errorf("M: cursor = %d, want %d (middle of visible)", m4.cursor, mid)
+	}
+}
+
+func TestHMLPeerView(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 12
+	m.mode = viewPeers
+	var peers []cilium.Peer
+	for i := 0; i < 30; i++ {
+		peers = append(peers, cilium.Peer{
+			Src:     fmt.Sprintf("10.1.0.%d:%d", i, 1000+i),
+			DstPort: 5432,
+		})
+	}
+	m.peers["pod-1"] = peers
+	m.scroll = 10
+
+	// H — scroll to show top of current view (no-op since scroll is already there).
+	updated, _ := m.Update(keyMsg("H"))
+	m2 := updated.(Model)
+	if m2.scroll != 10 {
+		t.Errorf("H: scroll = %d, want 10 (unchanged, already at top)", m2.scroll)
+	}
+
+	// L — scroll to bottom of visible area.
+	updated, _ = m2.Update(keyMsg("L"))
+	m3 := updated.(Model)
+	paneH := m3.peerPaneHeight()
+	expectedScroll := 10 + paneH - 1
+	max := m3.maxScroll()
+	if expectedScroll > max {
+		expectedScroll = max
+	}
+	if m3.scroll != expectedScroll {
+		t.Errorf("L: scroll = %d, want %d", m3.scroll, expectedScroll)
+	}
+
+	// M — scroll to middle.
+	m.scroll = 0
+	updated, _ = m.Update(keyMsg("M"))
+	m4 := updated.(Model)
+	midScroll := m4.peerPaneHeight() / 2
+	if m4.scroll != midScroll {
+		t.Errorf("M: scroll = %d, want %d", m4.scroll, midScroll)
+	}
+}
+
 func TestCtrlUHalfPageUpPeerView(t *testing.T) {
 	m := testModel()
 	m.width = 80
