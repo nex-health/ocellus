@@ -47,6 +47,10 @@ func keyMsg(s string) tea.KeyMsg {
 		return tea.KeyMsg(tea.Key{Type: tea.KeyShiftTab})
 	case "backspace":
 		return tea.KeyMsg(tea.Key{Type: tea.KeyBackspace})
+	case "ctrl+d":
+		return tea.KeyMsg(tea.Key{Type: tea.KeyCtrlD})
+	case "ctrl+u":
+		return tea.KeyMsg(tea.Key{Type: tea.KeyCtrlU})
 	default:
 		return tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune(s)})
 	}
@@ -1067,5 +1071,98 @@ func TestShiftTabJumpsToPrevPodWithPeers(t *testing.T) {
 	m2 := updated.(Model)
 	if m2.cursor != 0 {
 		t.Errorf("cursor = %d, want 0 (pod-1 has peers)", m2.cursor)
+	}
+}
+
+func TestCtrlDHalfPageDownPodList(t *testing.T) {
+	pods := make([]k8s.PodInfo, 20)
+	for i := range pods {
+		pods[i] = k8s.PodInfo{Name: fmt.Sprintf("pod-%d", i), Node: "node-a", IP: fmt.Sprintf("10.0.0.%d", i)}
+	}
+	m := New(Config{
+		Filter:   cilium.Filter{PortMin: 5432, PortMax: 5432},
+		Interval: 10 * time.Second,
+		Pods:     pods,
+	})
+	m.width = 80
+	m.height = 24
+
+	updated, _ := m.Update(keyMsg("ctrl+d"))
+	m2 := updated.(Model)
+	halfPage := m2.podPaneHeight() / 2
+	if m2.cursor != halfPage {
+		t.Errorf("cursor = %d after ctrl+d, want %d", m2.cursor, halfPage)
+	}
+}
+
+func TestCtrlUHalfPageUpPodList(t *testing.T) {
+	pods := make([]k8s.PodInfo, 20)
+	for i := range pods {
+		pods[i] = k8s.PodInfo{Name: fmt.Sprintf("pod-%d", i), Node: "node-a", IP: fmt.Sprintf("10.0.0.%d", i)}
+	}
+	m := New(Config{
+		Filter:   cilium.Filter{PortMin: 5432, PortMax: 5432},
+		Interval: 10 * time.Second,
+		Pods:     pods,
+	})
+	m.width = 80
+	m.height = 24
+	m.cursor = 15
+
+	updated, _ := m.Update(keyMsg("ctrl+u"))
+	m2 := updated.(Model)
+	halfPage := m2.podPaneHeight() / 2
+	expected := 15 - halfPage
+	if m2.cursor != expected {
+		t.Errorf("cursor = %d after ctrl+u, want %d", m2.cursor, expected)
+	}
+}
+
+func TestCtrlDHalfPageDownPeerView(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 12
+	m.mode = viewPeers
+	var peers []cilium.Peer
+	for i := 0; i < 30; i++ {
+		peers = append(peers, cilium.Peer{
+			Src:     fmt.Sprintf("10.1.0.%d:%d", i, 1000+i),
+			DstPort: 5432,
+		})
+	}
+	m.peers["pod-1"] = peers
+
+	updated, _ := m.Update(keyMsg("ctrl+d"))
+	m2 := updated.(Model)
+	halfPage := m2.peerPaneHeight() / 2
+	if m2.scroll != halfPage {
+		t.Errorf("scroll = %d after ctrl+d, want %d", m2.scroll, halfPage)
+	}
+}
+
+func TestCtrlUHalfPageUpPeerView(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 12
+	m.mode = viewPeers
+	var peers []cilium.Peer
+	for i := 0; i < 30; i++ {
+		peers = append(peers, cilium.Peer{
+			Src:     fmt.Sprintf("10.1.0.%d:%d", i, 1000+i),
+			DstPort: 5432,
+		})
+	}
+	m.peers["pod-1"] = peers
+	m.scroll = 15
+
+	updated, _ := m.Update(keyMsg("ctrl+u"))
+	m2 := updated.(Model)
+	halfPage := m2.peerPaneHeight() / 2
+	expected := 15 - halfPage
+	if expected < 0 {
+		expected = 0
+	}
+	if m2.scroll != expected {
+		t.Errorf("scroll = %d after ctrl+u, want %d", m2.scroll, expected)
 	}
 }
