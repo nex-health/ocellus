@@ -10,14 +10,24 @@ func TestParseTarget(t *testing.T) {
 		wantErr  bool
 	}{
 		{"deployment/pgbouncer", "deployment", "pgbouncer", false},
+		{"deploy/pgbouncer", "deployment", "pgbouncer", false},
 		{"statefulset/postgres", "statefulset", "postgres", false},
+		{"sts/postgres", "statefulset", "postgres", false},
 		{"daemonset/fluentd", "daemonset", "fluentd", false},
-		{"my-pod-xyz", "pod", "my-pod-xyz", false},
+		{"ds/fluentd", "daemonset", "fluentd", false},
+		{"replicaset/my-rs", "replicaset", "my-rs", false},
+		{"rs/my-rs", "replicaset", "my-rs", false},
 		{"pod/my-pod-xyz", "pod", "my-pod-xyz", false},
+		{"po/my-pod-xyz", "pod", "my-pod-xyz", false},
+		{"my-pod-xyz", "pod", "my-pod-xyz", false},
+		{"Deployment/pgbouncer", "deployment", "pgbouncer", false},
+		{"DEPLOY/pgbouncer", "deployment", "pgbouncer", false},
 		{"", "", "", true},
 		{"unknown/foo", "", "", true},
 		{"deployment/", "", "", true},
 		{"/name", "", "", true},
+		{"deployment/  spaces  ", "deployment", "spaces", false},
+		{"  bare-pod  ", "pod", "bare-pod", false},
 	}
 
 	for _, tt := range tests {
