@@ -347,9 +347,11 @@ func (m Model) updatePeerList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "s":
 		m.sortField = (m.sortField + 1) % sortFieldCount
+		m.scroll = 0
 		return m, nil
 	case "S":
 		m.sortReverse = !m.sortReverse
+		m.scroll = 0
 		return m, nil
 	case "/":
 		m.searching = true

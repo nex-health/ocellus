@@ -796,6 +796,46 @@ func TestSortCacheInvalidatedOnNewData(t *testing.T) {
 	}
 }
 
+func TestSortChangeResetsScroll(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 12
+	m.mode = viewPeers
+	var peers []cilium.Peer
+	for i := 0; i < 20; i++ {
+		peers = append(peers, cilium.Peer{
+			Src:     fmt.Sprintf("10.1.0.%d:%d", i, 1000+i),
+			DstPort: 5432,
+		})
+	}
+	m.peers["pod-1"] = peers
+
+	// Scroll down.
+	updated, _ := m.Update(keyMsg("j"))
+	m2 := updated.(Model)
+	if m2.scroll == 0 {
+		t.Fatal("scroll should be > 0 after j")
+	}
+
+	// Press 's' to cycle sort — scroll should reset.
+	updated, _ = m2.Update(keyMsg("s"))
+	m3 := updated.(Model)
+	if m3.scroll != 0 {
+		t.Errorf("scroll = %d after sort change, want 0", m3.scroll)
+	}
+
+	// Scroll down again.
+	updated, _ = m3.Update(keyMsg("j"))
+	m4 := updated.(Model)
+
+	// Press 'S' to reverse sort — scroll should reset.
+	updated, _ = m4.Update(keyMsg("S"))
+	m5 := updated.(Model)
+	if m5.scroll != 0 {
+		t.Errorf("scroll = %d after reverse toggle, want 0", m5.scroll)
+	}
+}
+
 func TestShiftTabJumpsToPrevPodWithPeers(t *testing.T) {
 	m := testModel()
 	m.width = 80
