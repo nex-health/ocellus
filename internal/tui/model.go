@@ -621,8 +621,13 @@ func (m Model) viewHelp(w int) string {
 		"  s             Cycle sort field",
 		"  S             Toggle reverse sort",
 		"  /             Search peers",
+		"  n/N           Next/prev search match",
 		"  tab/shift+tab Jump to next/prev pod with peers",
 		"  ?             Toggle this help",
+		"  gg            Jump to top",
+		"  G             Jump to bottom",
+		"  H/M/L         Top/middle/bottom of screen",
+		"  Ctrl+d/u      Half-page down/up",
 		"  pgup/pgdn     Page scroll",
 		"  home/end      Jump to top/bottom",
 	}
