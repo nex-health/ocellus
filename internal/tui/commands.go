@@ -20,11 +20,6 @@ type ClusterClient interface {
 func pollCmd(client ClusterClient, namespace string, target k8s.Target, filter cilium.Filter, pods []k8s.PodInfo, exited map[string]bool, timeout time.Duration) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
-		if timeout > 0 {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, timeout)
-			defer cancel()
-		}
 
 		// Group active pods by node.
 		nodeGroups := make(map[string][]k8s.PodInfo)
@@ -37,24 +32,32 @@ func pollCmd(client ClusterClient, namespace string, target k8s.Target, filter c
 		var mu sync.Mutex
 		peerResults := make(map[string][]cilium.Peer)
 		var pollErrors []string
-		var wg sync.WaitGroup
 
+		addError := func(msg string) {
+			mu.Lock()
+			pollErrors = append(pollErrors, msg)
+			mu.Unlock()
+		}
+
+		var wg sync.WaitGroup
 		for node, nodePods := range nodeGroups {
 			wg.Add(1)
 			go func(node string, nodePods []k8s.PodInfo) {
 				defer wg.Done()
-				agentName, err := cilium.FindCiliumAgent(ctx, client, node)
+				nodeCtx := ctx
+				if timeout > 0 {
+					var cancel context.CancelFunc
+					nodeCtx, cancel = context.WithTimeout(ctx, timeout)
+					defer cancel()
+				}
+				agentName, err := cilium.FindCiliumAgent(nodeCtx, client, node)
 				if err != nil {
-					mu.Lock()
-					pollErrors = append(pollErrors, fmt.Sprintf("node %s: %v", node, err))
-					mu.Unlock()
+					addError(fmt.Sprintf("node %s: %v", node, err))
 					return
 				}
-				ctOutput, err := cilium.QueryNode(ctx, client, agentName)
+				ctOutput, err := cilium.QueryNode(nodeCtx, client, agentName)
 				if err != nil {
-					mu.Lock()
-					pollErrors = append(pollErrors, fmt.Sprintf("node %s: %v", node, err))
-					mu.Unlock()
+					addError(fmt.Sprintf("node %s: %v", node, err))
 					return
 				}
 				mu.Lock()
@@ -71,9 +74,7 @@ func pollCmd(client ClusterClient, namespace string, target k8s.Target, filter c
 		newExited := make(map[string]bool)
 		currentPods, err := k8s.DiscoverPods(ctx, client, namespace, target)
 		if err != nil {
-			mu.Lock()
-			pollErrors = append(pollErrors, fmt.Sprintf("pod discovery: %v", err))
-			mu.Unlock()
+			addError(fmt.Sprintf("pod discovery: %v", err))
 		} else {
 			currentNames := make(map[string]bool)
 			for _, p := range currentPods {
