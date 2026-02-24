@@ -836,6 +836,58 @@ func TestSortChangeResetsScroll(t *testing.T) {
 	}
 }
 
+func TestPodListViewHasBottomDivider(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 24
+	m.timestamp = time.Now()
+
+	view := m.View()
+	lines := strings.Split(view, "\n")
+	// Scan backwards from the end for a divider line (status bar may span multiple lines).
+	found := false
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.Contains(lines[i], "─") {
+			// Make sure this is the bottom divider, not the header divider.
+			// The header divider is near the top (line 1).
+			if i > 2 {
+				found = true
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("expected bottom divider line before status bar")
+	}
+}
+
+func TestPeerListViewHasBottomDivider(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 24
+	m.mode = viewPeers
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, Proto: "TCP", State: "established"},
+	}
+
+	view := m.View()
+	lines := strings.Split(view, "\n")
+	// Scan backwards from the end for a divider line (status bar may span multiple lines).
+	found := false
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.Contains(lines[i], "─") {
+			// Make sure this is the bottom divider, not the header divider.
+			if i > 2 {
+				found = true
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("expected bottom divider line before status bar")
+	}
+}
+
 func TestShiftTabJumpsToPrevPodWithPeers(t *testing.T) {
 	m := testModel()
 	m.width = 80

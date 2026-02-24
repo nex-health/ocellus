@@ -208,7 +208,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // podPaneHeight returns lines available for pod rows in the pod list view.
 // Layout: header(1) + divider(1) + [pod rows] + status(1)
 func (m Model) podPaneHeight() int {
-	h := m.height - 3 // header + divider + status
+	h := m.height - 4 // header + divider + bottom divider + status
 	if h < 1 {
 		h = 1
 	}
@@ -404,7 +404,7 @@ func sortPeers(peers []cilium.Peer, field sortField, reverse bool) []cilium.Peer
 // peerPaneHeight returns lines available for peer data rows in the peer view.
 // Layout: header(1) + divider(1) + subheader(1) + column header(1) + [peer rows] + status(1)
 func (m Model) peerPaneHeight() int {
-	fixed := 1 + 1 + 1 + 1 + 1 // header + divider + subheader + col header + status
+	fixed := 1 + 1 + 1 + 1 + 1 + 1 // header + divider + subheader + col header + bottom divider + status
 	h := m.height - fixed
 	if h < 1 {
 		h = 1
@@ -496,10 +496,13 @@ func (m Model) viewHelp(w int) string {
 	}
 
 	// Fill remaining space.
-	usedLines := 2 + len(help) + 1
+	usedLines := 2 + len(help) + 1 + 1
 	for i := usedLines; i < m.height; i++ {
 		b.WriteString("\n")
 	}
+
+	b.WriteString(dividerStyle.Render(strings.Repeat("─", w)))
+	b.WriteString("\n")
 
 	keys := fmt.Sprintf("  %s close help", statusBarKeyStyle.Render("?"))
 	padLen := w - lipgloss.Width(keys) - 2
@@ -612,10 +615,13 @@ func (m Model) viewPodList(w int) string {
 
 	// Fill remaining space.
 	visiblePods := end - start
-	usedLines := 2 + visiblePods + 1 // header + divider + visible pods + status
+	usedLines := 2 + visiblePods + 1 + 1 // header + divider + visible pods + bottom divider + status
 	for i := usedLines; i < m.height; i++ {
 		b.WriteString("\n")
 	}
+
+	b.WriteString(dividerStyle.Render(strings.Repeat("─", w)))
+	b.WriteString("\n")
 
 	// Status bar.
 	statusIndicator := ""
@@ -734,6 +740,9 @@ func (m Model) viewPeerList(w int) string {
 			b.WriteString("\n")
 		}
 	}
+
+	b.WriteString(dividerStyle.Render(strings.Repeat("─", w)))
+	b.WriteString("\n")
 
 	// Status bar.
 	if m.searching {
