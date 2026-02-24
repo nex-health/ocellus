@@ -474,6 +474,26 @@ func (m Model) updatePeerList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searchQuery = ""
 		m.scroll = 0
 		return m, nil
+	case "n":
+		// Next: scroll forward by 1 if search is active.
+		if m.searchQuery != "" {
+			m.paused = true
+			m.scroll++
+			peers := m.selectedPeers()
+			if max := len(peers) - 1; max >= 0 && m.scroll > max {
+				m.scroll = max
+			}
+		}
+		return m, nil
+	case "N":
+		// Previous: scroll backward by 1 if search is active.
+		if m.searchQuery != "" {
+			m.paused = true
+			if m.scroll > 0 {
+				m.scroll--
+			}
+		}
+		return m, nil
 	}
 	return m, nil
 }

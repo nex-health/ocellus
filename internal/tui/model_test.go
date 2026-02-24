@@ -1232,6 +1232,73 @@ func TestHMLPeerView(t *testing.T) {
 	}
 }
 
+func TestSearchNextN(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 12
+	m.mode = viewPeers
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1000", DstPort: 5432},
+		{Src: "10.2.0.1:2000", DstPort: 5432},
+		{Src: "10.1.0.2:3000", DstPort: 5432},
+		{Src: "10.3.0.1:4000", DstPort: 5432},
+		{Src: "10.1.0.3:5000", DstPort: 5432},
+	}
+	m.searchQuery = "10.1"
+
+	// 'n' should scroll forward by 1.
+	updated, _ := m.Update(keyMsg("n"))
+	m2 := updated.(Model)
+	if m2.scroll != 1 {
+		t.Errorf("scroll = %d after n, want 1", m2.scroll)
+	}
+
+	// 'n' again.
+	updated, _ = m2.Update(keyMsg("n"))
+	m3 := updated.(Model)
+	if m3.scroll != 2 {
+		t.Errorf("scroll = %d after second n, want 2", m3.scroll)
+	}
+}
+
+func TestSearchPrevN(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 12
+	m.mode = viewPeers
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1000", DstPort: 5432},
+		{Src: "10.1.0.2:2000", DstPort: 5432},
+		{Src: "10.1.0.3:3000", DstPort: 5432},
+	}
+	m.searchQuery = "10.1"
+	m.scroll = 2
+
+	// 'N' should scroll backwards.
+	updated, _ := m.Update(keyMsg("N"))
+	m2 := updated.(Model)
+	if m2.scroll != 1 {
+		t.Errorf("scroll = %d after N, want 1", m2.scroll)
+	}
+}
+
+func TestSearchNWithoutQuery(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 12
+	m.mode = viewPeers
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1000", DstPort: 5432},
+	}
+
+	// 'n' without active search should do nothing.
+	updated, _ := m.Update(keyMsg("n"))
+	m2 := updated.(Model)
+	if m2.scroll != 0 {
+		t.Errorf("scroll = %d after n with no query, want 0", m2.scroll)
+	}
+}
+
 func TestCtrlUHalfPageUpPeerView(t *testing.T) {
 	m := testModel()
 	m.width = 80
