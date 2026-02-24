@@ -161,12 +161,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for name := range msg.exited {
 			m.exited[name] = true
 		}
-		if m.cursor >= len(m.config.Pods) {
+		if len(m.config.Pods) == 0 {
+			m.cursor = 0
+		} else if m.cursor >= len(m.config.Pods) {
 			m.cursor = len(m.config.Pods) - 1
 		}
-		if m.cursor < 0 {
-			m.cursor = 0
-		}
+		m.clampPodScroll()
 		m.clampScroll()
 		if m.paused {
 			return m, nil

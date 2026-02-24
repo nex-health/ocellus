@@ -710,6 +710,31 @@ func TestStartPollDoesNotShareExitedMap(t *testing.T) {
 	}
 }
 
+func TestPollResultWithEmptyPods(t *testing.T) {
+	m := New(Config{
+		Filter:   cilium.Filter{PortMin: 5432, PortMax: 5432},
+		Interval: 10 * time.Second,
+		Pods:     []k8s.PodInfo{}, // empty!
+	})
+	m.width = 80
+	m.height = 24
+
+	updated, _ := m.Update(pollResultMsg{
+		peers:     map[string][]cilium.Peer{},
+		timestamp: time.Now(),
+	})
+	m2 := updated.(Model)
+	if m2.cursor != 0 {
+		t.Errorf("cursor = %d, want 0", m2.cursor)
+	}
+
+	// View should not panic.
+	view := m2.View()
+	if view == "" {
+		t.Error("View() should not be empty")
+	}
+}
+
 func TestShiftTabJumpsToPrevPodWithPeers(t *testing.T) {
 	m := testModel()
 	m.width = 80
