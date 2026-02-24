@@ -692,12 +692,47 @@ func (m Model) viewPeerList(w int) string {
 			}
 		}
 
-		// Column header.
-		hdr := fmt.Sprintf("  %-*s  %-*s  %-5s  %-11s",
-			peerColW, "Peer Address:Port",
-			localColW, "Local Address:Port",
-			"Proto",
-			"State")
+		// Column header with sort indicators.
+		arrow := "▲"
+		if m.sortReverse {
+			arrow = "▼"
+		}
+		styledArrow := " " + sortArrowStyle.Render(arrow)
+		arrowW := lipgloss.Width(styledArrow)
+
+		srcLabel := "Peer Address:Port"
+		localLabel := "Local Address:Port"
+		protoLabel := "Proto"
+		stateLabel := "State"
+
+		// Add arrow to active sort column.
+		padSrc := peerColW
+		padLocal := localColW
+		switch m.sortField {
+		case sortSrc:
+			srcLabel += styledArrow
+			padSrc = peerColW + arrowW
+		case sortPort:
+			localLabel += styledArrow
+			padLocal = localColW + arrowW
+		case sortProto:
+			protoLabel += styledArrow
+		case sortState:
+			stateLabel += styledArrow
+		}
+
+		// Pad labels. For labels with ANSI codes, we need to pad based on display width.
+		srcPad := padSrc - lipgloss.Width(srcLabel)
+		if srcPad > 0 {
+			srcLabel += strings.Repeat(" ", srcPad)
+		}
+		localPad := padLocal - lipgloss.Width(localLabel)
+		if localPad > 0 {
+			localLabel += strings.Repeat(" ", localPad)
+		}
+
+		hdr := fmt.Sprintf("  %s  %s  %-5s  %-11s",
+			srcLabel, localLabel, protoLabel, stateLabel)
 		b.WriteString(columnHeaderStyle.Render(hdr))
 		b.WriteString("\n")
 
@@ -767,20 +802,14 @@ func (m Model) viewPeerList(w int) string {
 			scrollInfo = fmt.Sprintf("  [%d/%d]", m.scroll+1, maxScroll+1)
 		}
 
-		sortLabel := fmt.Sprintf("sort:%s", sortFieldNames[m.sortField])
-		if m.sortReverse {
-			sortLabel += "(rev)"
-		}
-
-		keys := fmt.Sprintf("  %s back  %s scroll  %s sort  %s search  %s pause  %s quit%s  %s",
+		keys := fmt.Sprintf("  %s back  %s scroll  %s sort  %s search  %s pause  %s quit%s",
 			statusBarKeyStyle.Render("esc"),
 			statusBarKeyStyle.Render("j/k"),
-			statusBarKeyStyle.Render("s"),
+			statusBarKeyStyle.Render("s/S"),
 			statusBarKeyStyle.Render("/"),
 			statusBarKeyStyle.Render("p"),
 			statusBarKeyStyle.Render("q"),
-			scrollInfo,
-			sortLabel)
+			scrollInfo)
 		padLen := w - lipgloss.Width(keys) - lipgloss.Width(statusIndicator) - 2
 		if padLen < 0 {
 			padLen = 0

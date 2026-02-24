@@ -888,6 +888,54 @@ func TestPeerListViewHasBottomDivider(t *testing.T) {
 	}
 }
 
+func TestPeerViewShowsSortArrowInHeader(t *testing.T) {
+	m := testModel()
+	m.width = 120
+	m.height = 24
+	m.mode = viewPeers
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, Proto: "TCP", State: "established"},
+	}
+
+	// Default sort is src ascending — should show ▲ on Peer column.
+	view := m.View()
+	if !strings.Contains(view, "▲") {
+		t.Error("expected ▲ in column header for default sort")
+	}
+
+	// Toggle reverse — should show ▼.
+	updated, _ := m.Update(keyMsg("S"))
+	m2 := updated.(Model)
+	view2 := m2.View()
+	if !strings.Contains(view2, "▼") {
+		t.Error("expected ▼ in column header for reversed sort")
+	}
+
+	// Cycle to port sort.
+	updated, _ = m2.Update(keyMsg("s"))
+	m3 := updated.(Model)
+	view3 := m3.View()
+	// Should still have an arrow somewhere.
+	if !strings.Contains(view3, "▲") && !strings.Contains(view3, "▼") {
+		t.Error("expected sort arrow in column header after cycling sort field")
+	}
+}
+
+func TestPeerViewStatusBarNoSortLabel(t *testing.T) {
+	m := testModel()
+	m.width = 120
+	m.height = 24
+	m.mode = viewPeers
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, Proto: "TCP", State: "established"},
+	}
+
+	view := m.View()
+	if strings.Contains(view, "sort:src") {
+		t.Error("status bar should not contain sort:src label anymore")
+	}
+}
+
 func TestShiftTabJumpsToPrevPodWithPeers(t *testing.T) {
 	m := testModel()
 	m.width = 80
