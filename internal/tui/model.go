@@ -498,6 +498,24 @@ func (m Model) updatePeerList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// highlightMatch returns text with the first case-insensitive occurrence of query
+// wrapped in searchMatchStyle. Returns text unchanged if query is empty or not found.
+func highlightMatch(text, query string) string {
+	if query == "" {
+		return text
+	}
+	lower := strings.ToLower(text)
+	q := strings.ToLower(query)
+	idx := strings.Index(lower, q)
+	if idx < 0 {
+		return text
+	}
+	before := text[:idx]
+	match := text[idx : idx+len(query)]
+	after := text[idx+len(query):]
+	return before + searchMatchStyle.Render(match) + after
+}
+
 // filteredPeers returns peers matching the current search query.
 func (m Model) filteredPeers(peers []cilium.Peer) []cilium.Peer {
 	if m.searchQuery == "" {
@@ -902,8 +920,15 @@ func (m Model) viewPeerList(w int) string {
 				stateStr = fmt.Sprintf("%-11s", p.State)
 			}
 
-			row := fmt.Sprintf("  %-*s  %-*s  %-5s  %s",
-				peerColW, p.Src,
+			// Highlight search match in Src column.
+			srcStr := highlightMatch(p.Src, m.searchQuery)
+			srcPadding := peerColW - lipgloss.Width(srcStr)
+			if srcPadding > 0 {
+				srcStr += strings.Repeat(" ", srcPadding)
+			}
+
+			row := fmt.Sprintf("  %s  %-*s  %-5s  %s",
+				srcStr,
 				localColW, local,
 				p.Proto,
 				stateStr)

@@ -7,6 +7,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
+
 	"github.com/aurelcanciu/ocellus/internal/cilium"
 	"github.com/aurelcanciu/ocellus/internal/k8s"
 )
@@ -1323,5 +1326,75 @@ func TestCtrlUHalfPageUpPeerView(t *testing.T) {
 	}
 	if m2.scroll != expected {
 		t.Errorf("scroll = %d after ctrl+u, want %d", m2.scroll, expected)
+	}
+}
+
+func TestHighlightMatch(t *testing.T) {
+	// No match returns original.
+	result := highlightMatch("10.1.0.1:1234", "xyz")
+	if result != "10.1.0.1:1234" {
+		t.Errorf("no-match should return original, got %q", result)
+	}
+
+	// Empty query returns original.
+	result2 := highlightMatch("10.1.0.1:1234", "")
+	if result2 != "10.1.0.1:1234" {
+		t.Errorf("empty query should return original, got %q", result2)
+	}
+
+	// Basic match should contain the surrounding text.
+	result3 := highlightMatch("10.1.0.1:1234", "0.1.0")
+	if !strings.Contains(result3, "1") {
+		t.Error("highlighted result should contain surrounding text")
+	}
+	// Display width should be at least the original length (style doesn't shrink text).
+	if lipgloss.Width(result3) < len("10.1.0.1:1234") {
+		t.Errorf("display width %d should be >= original %d", lipgloss.Width(result3), len("10.1.0.1:1234"))
+	}
+
+	// Case-insensitive: should still find match.
+	result4 := highlightMatch("ABCDEF", "cde")
+	// The original case should be preserved in output.
+	if !strings.Contains(result4, "CDE") {
+		t.Error("case-insensitive match should preserve original case")
+	}
+}
+
+func TestHighlightMatchWithColorProfile(t *testing.T) {
+	// Force ANSI color output for this test.
+	lipgloss.SetColorProfile(termenv.ANSI)
+	defer lipgloss.SetColorProfile(termenv.Ascii)
+
+	result := highlightMatch("10.1.0.1:1234", "10.1")
+	if result == "10.1.0.1:1234" {
+		t.Error("with ANSI profile, highlighted result should differ from plain text")
+	}
+	if !strings.Contains(result, "\x1b[") {
+		t.Error("with ANSI profile, highlighted result should contain escape codes")
+	}
+}
+
+func TestPeerViewSearchHighlightFilters(t *testing.T) {
+	m := testModel()
+	m.width = 120
+	m.height = 24
+	m.mode = viewPeers
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, Proto: "TCP", State: "established"},
+		{Src: "10.2.0.1:5678", DstPort: 5432, Proto: "TCP", State: "established"},
+	}
+	m.searchQuery = "10.1"
+
+	view := m.View()
+	// With search active, only the matching peer should appear.
+	if !strings.Contains(view, "10.1.0.1:1234") {
+		t.Error("view should contain matching peer")
+	}
+	if strings.Contains(view, "10.2.0.1:5678") {
+		t.Error("view should not contain non-matching peer")
+	}
+	// Should show filtered count.
+	if !strings.Contains(view, "1/2 connections") {
+		t.Error("view should show filtered count")
 	}
 }

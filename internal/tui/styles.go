@@ -61,6 +61,8 @@ var (
 
 	sortArrowStyle = lipgloss.NewStyle().Foreground(colorGreen).Bold(true)
 
+	searchMatchStyle = lipgloss.NewStyle().Foreground(colorYellow).Bold(true)
+
 	searchBarStyle = lipgloss.NewStyle().
 			Background(colorBg).
 			Foreground(colorFg).
