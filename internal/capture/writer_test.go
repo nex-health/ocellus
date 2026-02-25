@@ -53,6 +53,19 @@ func TestFileWriterAppends(t *testing.T) {
 	}
 }
 
+func TestFileWriterPath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.jsonl")
+	w, err := NewFileWriter(path)
+	if err != nil {
+		t.Fatalf("NewFileWriter error: %v", err)
+	}
+	defer w.Close()
+	if w.Path() != path {
+		t.Errorf("Path() = %q, want %q", w.Path(), path)
+	}
+}
+
 func TestStreamWriter(t *testing.T) {
 	var buf bytes.Buffer
 	w := NewStreamWriter(&buf)

@@ -31,6 +31,10 @@ func (w *FileWriter) Write(data []byte) error {
 }
 
 func (w *FileWriter) Close() error {
+	if err := w.f.Sync(); err != nil {
+		w.f.Close()
+		return err
+	}
 	return w.f.Close()
 }
 
