@@ -86,6 +86,32 @@ func TestAutoSourceFallsBackWhenJSONReturnsZeroPeers(t *testing.T) {
 	}
 }
 
+func TestTextSourceQueryPeers_ExecError(t *testing.T) {
+	client := &mockPodExecer{
+		execFn: func(_, _, _ string, _ []string) (string, error) {
+			return "", fmt.Errorf("connection refused")
+		},
+	}
+	src := &TextSource{}
+	_, err := src.QueryPeers(context.Background(), client, "cilium-abc", []string{"10.4.34.6"}, Filter{PortMin: 4143, PortMax: 4143})
+	if err == nil {
+		t.Fatal("expected error when QueryNode fails")
+	}
+}
+
+func TestAutoSourceBothFail(t *testing.T) {
+	client := &mockPodExecer{
+		execFn: func(_, _, _ string, _ []string) (string, error) {
+			return "", fmt.Errorf("exec failed")
+		},
+	}
+	src := NewAutoSource()
+	_, err := src.QueryPeers(context.Background(), client, "cilium-abc", []string{"10.4.34.6"}, Filter{PortMin: 4143, PortMax: 4143})
+	if err == nil {
+		t.Fatal("expected error when both JSON and text fail")
+	}
+}
+
 func TestAutoSourceRemembersPreference(t *testing.T) {
 	callCount := 0
 	client := &mockPodExecer{

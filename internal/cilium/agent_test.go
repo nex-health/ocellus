@@ -60,6 +60,24 @@ func TestFindCiliumAgent_NoneFound(t *testing.T) {
 	}
 }
 
+func TestFindCiliumAgent_NonRunningPod(t *testing.T) {
+	client := &mockPodExecer{
+		pods: &corev1.PodList{
+			Items: []corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "cilium-pending"},
+					Status:     corev1.PodStatus{Phase: corev1.PodPending},
+				},
+			},
+		},
+	}
+
+	_, err := FindCiliumAgent(context.Background(), client, "node-1")
+	if err == nil {
+		t.Fatal("expected error when no running agent found")
+	}
+}
+
 func TestQueryNode(t *testing.T) {
 	client := &mockPodExecer{
 		execFn: func(_, pod, container string, _ []string) (string, error) {
@@ -76,5 +94,18 @@ func TestQueryNode(t *testing.T) {
 	}
 	if output == "" {
 		t.Error("expected non-empty output")
+	}
+}
+
+func TestQueryNode_ExecError(t *testing.T) {
+	client := &mockPodExecer{
+		execFn: func(_, _, _ string, _ []string) (string, error) {
+			return "", fmt.Errorf("connection refused")
+		},
+	}
+
+	_, err := QueryNode(context.Background(), client, "cilium-abc")
+	if err == nil {
+		t.Fatal("expected error when exec fails")
 	}
 }

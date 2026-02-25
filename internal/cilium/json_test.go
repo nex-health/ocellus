@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"net"
 	"testing"
 )
 
@@ -176,6 +177,115 @@ func TestParseJSONCTOutput_StateClosing(t *testing.T) {
 	}
 	if peers[0].State != "closing" {
 		t.Errorf("State = %q, want closing", peers[0].State)
+	}
+}
+
+func TestDecodeIPv4_InvalidBase64(t *testing.T) {
+	_, err := decodeIPv4("!!!not-base64!!!")
+	if err == nil {
+		t.Fatal("expected error for invalid base64")
+	}
+}
+
+func TestDecodeIPv4_WrongLength(t *testing.T) {
+	// Valid base64 but not 4 bytes.
+	short := base64.StdEncoding.EncodeToString([]byte{1, 2})
+	_, err := decodeIPv4(short)
+	if err == nil {
+		t.Fatal("expected error for wrong-length data")
+	}
+}
+
+func TestParseJSONCTOutput_SrcCIDRFilter(t *testing.T) {
+	entries := []ctMapRecord{
+		{
+			Key: ctKey{TupleKey4: &tupleKey4{
+				DestAddr: encodeIPv4(10, 1, 0, 1), SourceAddr: encodeIPv4(10, 4, 166, 193),
+				DestPort: networkPort(5432), SourcePort: networkPort(1000),
+				NextHeader: 6, Flags: 1,
+			}},
+			Value: ctValue{Bytes: 100},
+		},
+		{
+			Key: ctKey{TupleKey4: &tupleKey4{
+				DestAddr: encodeIPv4(10, 1, 0, 1), SourceAddr: encodeIPv4(192, 168, 1, 1),
+				DestPort: networkPort(5432), SourcePort: networkPort(2000),
+				NextHeader: 6, Flags: 1,
+			}},
+			Value: ctValue{Bytes: 200},
+		},
+	}
+	data, _ := json.Marshal(entries)
+
+	_, cidr, _ := net.ParseCIDR("10.4.166.0/24")
+	peers, err := ParseJSONCTOutput(string(data), "10.1.0.1", Filter{
+		PortMin: 5432, PortMax: 5432,
+		SrcCIDR: cidr,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(peers) != 1 {
+		t.Fatalf("expected 1 peer from CIDR, got %d", len(peers))
+	}
+	if peers[0].Src != "10.4.166.193:1000" {
+		t.Errorf("Src = %q, want 10.4.166.193:1000", peers[0].Src)
+	}
+}
+
+func TestParseJSONCTOutput_NilTupleKey4(t *testing.T) {
+	entries := []ctMapRecord{
+		{
+			Key:   ctKey{TupleKey4: nil}, // IPv6 entry, no TupleKey4
+			Value: ctValue{Bytes: 100},
+		},
+	}
+	data, _ := json.Marshal(entries)
+
+	peers, err := ParseJSONCTOutput(string(data), "10.1.0.1", Filter{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(peers) != 0 {
+		t.Fatalf("expected 0 peers for IPv6-only entries, got %d", len(peers))
+	}
+}
+
+func TestParseJSONCTOutput_PortRangeFilter(t *testing.T) {
+	entries := []ctMapRecord{
+		{
+			Key: ctKey{TupleKey4: &tupleKey4{
+				DestAddr: encodeIPv4(10, 1, 0, 1), SourceAddr: encodeIPv4(10, 0, 0, 1),
+				DestPort: networkPort(5432), SourcePort: networkPort(1000),
+				NextHeader: 6, Flags: 1,
+			}},
+			Value: ctValue{Bytes: 100},
+		},
+		{
+			Key: ctKey{TupleKey4: &tupleKey4{
+				DestAddr: encodeIPv4(10, 1, 0, 1), SourceAddr: encodeIPv4(10, 0, 0, 2),
+				DestPort: networkPort(5440), SourcePort: networkPort(2000),
+				NextHeader: 6, Flags: 1,
+			}},
+			Value: ctValue{Bytes: 200},
+		},
+		{
+			Key: ctKey{TupleKey4: &tupleKey4{
+				DestAddr: encodeIPv4(10, 1, 0, 1), SourceAddr: encodeIPv4(10, 0, 0, 3),
+				DestPort: networkPort(6000), SourcePort: networkPort(3000),
+				NextHeader: 6, Flags: 1,
+			}},
+			Value: ctValue{Bytes: 300},
+		},
+	}
+	data, _ := json.Marshal(entries)
+
+	peers, err := ParseJSONCTOutput(string(data), "10.1.0.1", Filter{PortMin: 5432, PortMax: 5440})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(peers) != 2 {
+		t.Fatalf("expected 2 peers in port range, got %d", len(peers))
 	}
 }
 

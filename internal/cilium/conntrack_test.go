@@ -502,6 +502,7 @@ func TestFilterSummary(t *testing.T) {
 		{"udp", Filter{Protos: []string{"UDP"}}, "all ports  udp"},
 		{"multi proto", Filter{PortMin: 53, PortMax: 53, Protos: []string{"TCP", "UDP"}}, ":53  tcp+udp"},
 		{"state all", Filter{States: []string{"all"}}, "all ports  state:all"},
+		{"src cidr", Filter{SrcCIDR: func() *net.IPNet { _, n, _ := net.ParseCIDR("10.0.0.0/24"); return n }()}, "all ports  src:10.0.0.0/24"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -510,5 +511,25 @@ func TestFilterSummary(t *testing.T) {
 				t.Errorf("FilterSummary() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestComparePeerAddr_UnparseableIPs(t *testing.T) {
+	// Both unparseable: falls back to string comparison.
+	if got := ComparePeerAddr("zzz:1000", "aaa:1000"); got != 1 {
+		t.Errorf("expected 1 for zzz > aaa, got %d", got)
+	}
+	if got := ComparePeerAddr("aaa:1000", "zzz:1000"); got != -1 {
+		t.Errorf("expected -1 for aaa < zzz, got %d", got)
+	}
+	if got := ComparePeerAddr("aaa:1000", "aaa:1000"); got != 0 {
+		t.Errorf("expected 0 for equal, got %d", got)
+	}
+}
+
+func TestSplitHostPort_MissingPort(t *testing.T) {
+	// No colon at all: returns full string as host, port 0.
+	if got := ComparePeerAddr("10.0.0.1", "10.0.0.2"); got != -1 {
+		t.Errorf("expected -1 for addresses without ports, got %d", got)
 	}
 }
