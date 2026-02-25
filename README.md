@@ -79,7 +79,7 @@ ocellus --src 10.4.166.0/24 my-pod-name
 | `Ctrl+d` / `Ctrl+u` | Half-page down/up |
 | `PgUp/PgDn` | Page scroll |
 | `Home/End` | Jump to top/bottom |
-| `s` | Cycle sort (src, port, proto, state) |
+| `s` | Cycle sort (src, port, proto, state, bytes) |
 | `S` | Toggle reverse sort |
 | `/` | Search peers by IP |
 | `n/N` | Next/prev search match |

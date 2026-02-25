@@ -658,7 +658,7 @@ func (m Model) viewHelp(w int) string {
 		"  esc           Back / Clear search",
 		"  p / space     Toggle pause",
 		"  r             Resume polling",
-		"  s             Cycle sort field",
+		"  s             Cycle sort (src, port, proto, state, bytes)",
 		"  S             Toggle reverse sort",
 		"  /             Search peers",
 		"  n/N           Next/prev search match",
