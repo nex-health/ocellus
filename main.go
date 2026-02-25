@@ -84,6 +84,12 @@ func main() {
 	}
 
 	ctx := context.Background()
+
+	if err := cilium.CheckInstalled(ctx, client); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
 	pods, err := k8s.DiscoverPods(ctx, client, *namespace, target)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
