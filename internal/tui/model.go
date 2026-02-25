@@ -27,6 +27,7 @@ const (
 	sortPort
 	sortProto
 	sortState
+	sortBytes
 	sortFieldCount // sentinel for cycling
 )
 
@@ -541,6 +542,8 @@ func sortPeers(peers []cilium.Peer, field sortField, reverse bool) []cilium.Peer
 			less = sorted[i].Proto < sorted[j].Proto
 		case sortState:
 			less = sorted[i].State < sorted[j].State
+		case sortBytes:
+			less = sorted[i].Bytes < sorted[j].Bytes
 		default: // sortSrc
 			less = cilium.ComparePeerAddr(sorted[i].Src, sorted[j].Src) < 0
 		}
@@ -892,6 +895,8 @@ func (m Model) viewPeerList(w int) string {
 			protoLabel += styledArrow
 		case sortState:
 			stateLabel += styledArrow
+		case sortBytes:
+			bytesLabel += styledArrow
 		}
 
 		// Pad labels. For labels with ANSI codes, we need to pad based on display width.

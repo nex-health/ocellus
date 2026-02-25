@@ -1393,6 +1393,35 @@ func TestPeerViewShowsBytesColumn(t *testing.T) {
 	}
 }
 
+func TestPeerSortByBytes(t *testing.T) {
+	m := testModel()
+	m.width = 160
+	m.height = 24
+	m.mode = viewPeers
+	m.sortField = sortBytes
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1000", DstPort: 5432, Proto: "TCP", State: "established", Bytes: 100},
+		{Src: "10.1.0.2:2000", DstPort: 5432, Proto: "TCP", State: "established", Bytes: 9999},
+		{Src: "10.1.0.3:3000", DstPort: 5432, Proto: "TCP", State: "established", Bytes: 500},
+	}
+
+	view := m.View()
+	lines := strings.Split(view, "\n")
+	// Find data lines containing our test IPs.
+	var order []string
+	for _, line := range lines {
+		for _, ip := range []string{"10.1.0.1", "10.1.0.2", "10.1.0.3"} {
+			if strings.Contains(line, ip) {
+				order = append(order, ip)
+			}
+		}
+	}
+	// Ascending by bytes: 100 (.0.1), 500 (.0.3), 9999 (.0.2).
+	if len(order) != 3 || order[0] != "10.1.0.1" || order[1] != "10.1.0.3" || order[2] != "10.1.0.2" {
+		t.Errorf("sort by bytes ascending: got order %v, want [10.1.0.1 10.1.0.3 10.1.0.2]", order)
+	}
+}
+
 func TestPeerViewSearchHighlightFilters(t *testing.T) {
 	m := testModel()
 	m.width = 120
