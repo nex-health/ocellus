@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/aurelcanciu/ocellus/internal/cilium"
+	"github.com/aurelcanciu/ocellus/internal/format"
 	"github.com/aurelcanciu/ocellus/internal/k8s"
 )
 
@@ -840,13 +841,26 @@ func (m Model) viewPeerList(w int) string {
 		// Compute column widths.
 		peerColW := len("Peer Address:Port")
 		localColW := len("Local Address:Port")
-		for _, p := range peers {
+		bytesColW := len("Rx/Tx")
+		// Pre-compute bytes strings for width calculation.
+		bytesStrs := make([]string, len(peers))
+		for i, p := range peers {
 			if len(p.Src) > peerColW {
 				peerColW = len(p.Src)
 			}
 			local := fmt.Sprintf("%s:%d", selected.IP, p.DstPort)
 			if len(local) > localColW {
 				localColW = len(local)
+			}
+			var bs string
+			if p.RxBytes > 0 || p.TxBytes > 0 {
+				bs = format.Bytes(p.RxBytes) + "/" + format.Bytes(p.TxBytes)
+			} else if p.Bytes > 0 {
+				bs = format.Bytes(p.Bytes)
+			}
+			bytesStrs[i] = bs
+			if len(bs) > bytesColW {
+				bytesColW = len(bs)
 			}
 		}
 
@@ -862,6 +876,7 @@ func (m Model) viewPeerList(w int) string {
 		localLabel := "Local Address:Port"
 		protoLabel := "Proto"
 		stateLabel := "State"
+		bytesLabel := "Rx/Tx"
 
 		// Add arrow to active sort column.
 		padSrc := peerColW
@@ -889,8 +904,8 @@ func (m Model) viewPeerList(w int) string {
 			localLabel += strings.Repeat(" ", localPad)
 		}
 
-		hdr := fmt.Sprintf("  %s  %s  %-5s  %-11s",
-			srcLabel, localLabel, protoLabel, stateLabel)
+		hdr := fmt.Sprintf("  %s  %s  %-5s  %-11s  %-*s",
+			srcLabel, localLabel, protoLabel, stateLabel, bytesColW, bytesLabel)
 		b.WriteString(columnHeaderStyle.Render(hdr))
 		b.WriteString("\n")
 
@@ -905,7 +920,7 @@ func (m Model) viewPeerList(w int) string {
 			end = len(peers)
 		}
 		visible := peers[start:end]
-		for _, p := range visible {
+		for vi, p := range visible {
 			local := fmt.Sprintf("%s:%d", selected.IP, p.DstPort)
 
 			// State with color.
@@ -926,11 +941,14 @@ func (m Model) viewPeerList(w int) string {
 				srcStr += strings.Repeat(" ", srcPadding)
 			}
 
-			row := fmt.Sprintf("  %s  %-*s  %-5s  %s",
+			bytesStr := bytesStrs[start+vi]
+
+			row := fmt.Sprintf("  %s  %-*s  %-5s  %s  %-*s",
 				srcStr,
 				localColW, local,
 				p.Proto,
-				stateStr)
+				stateStr,
+				bytesColW, bytesStr)
 			b.WriteString(detailPeerStyle.Render(row))
 			b.WriteString("\n")
 		}

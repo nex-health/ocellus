@@ -1374,6 +1374,25 @@ func TestHighlightMatchWithColorProfile(t *testing.T) {
 	}
 }
 
+func TestPeerViewShowsBytesColumn(t *testing.T) {
+	m := testModel()
+	m.width = 160
+	m.height = 24
+	m.mode = viewPeers
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, Proto: "TCP", State: "established", Bytes: 1536, Packets: 10},
+	}
+
+	view := m.View()
+	if !strings.Contains(view, "Rx/Tx") {
+		t.Error("should show Rx/Tx column header")
+	}
+	// 1.5 K is the formatted output for 1536 bytes.
+	if !strings.Contains(view, "1.5 K") {
+		t.Error("should show formatted byte count")
+	}
+}
+
 func TestPeerViewSearchHighlightFilters(t *testing.T) {
 	m := testModel()
 	m.width = 120
