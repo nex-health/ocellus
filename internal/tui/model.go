@@ -717,25 +717,34 @@ func (m Model) renderHeader(b *strings.Builder, w int) {
 
 	target := fmt.Sprintf("%s/%s/%s", m.config.Namespace, m.config.Target.Kind, m.config.Target.Name)
 	filterLabel := m.config.Filter.FilterSummary()
-	ctxLabel := ""
+	sep := headerDimStyle.Render(" │ ")
+
+	var parts []string
+	parts = append(parts, headerBrandStyle.Render("◎ ocellus"))
 	if m.config.Context != "" {
-		ctxLabel = "  " + m.config.Context
+		parts = append(parts, headerContextStyle.Render(m.config.Context))
 	}
-	var headerText string
+	parts = append(parts, headerTargetStyle.Render(target))
+	if filterLabel != "" {
+		parts = append(parts, headerDimStyle.Render(filterLabel))
+	}
+
 	if m.timestamp.IsZero() {
-		headerText = fmt.Sprintf("  ◎ ocellus%s  %s  %s   %d pods   loading…",
-			ctxLabel, target, filterLabel, len(m.config.Pods))
+		parts = append(parts, headerDimStyle.Render(fmt.Sprintf("%d pods", len(m.config.Pods))))
+		parts = append(parts, headerDimStyle.Render("loading…"))
 	} else {
-		bytesStr := ""
+		parts = append(parts, headerStatsStyle.Render(fmt.Sprintf("%d/%d active", active, len(m.config.Pods))))
+		parts = append(parts, headerDimStyle.Render(fmt.Sprintf("%d conn", totalConns)))
 		if totalBytes > 0 {
-			bytesStr = "   " + format.Bytes(totalBytes)
+			parts = append(parts, headerStatsStyle.Render(format.Bytes(totalBytes)))
 		}
 		if m.bytesPerSec > 0 {
-			bytesStr += fmt.Sprintf("   %s/s", format.Bytes(m.bytesPerSec))
+			parts = append(parts, headerRateStyle.Render(fmt.Sprintf("%s/s", format.Bytes(m.bytesPerSec))))
 		}
-		headerText = fmt.Sprintf("  ◎ ocellus%s  %s  %s   %d/%d active   %d connections%s   %s",
-			ctxLabel, target, filterLabel, active, len(m.config.Pods), totalConns, bytesStr, ts)
+		parts = append(parts, headerDimStyle.Render(ts))
 	}
+
+	headerText := "  " + strings.Join(parts, sep)
 	b.WriteString(headerStyle.Width(w).Render(headerText))
 	b.WriteString("\n")
 
