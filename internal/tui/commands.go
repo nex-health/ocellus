@@ -97,13 +97,13 @@ func pollCmd(client ClusterClient, namespace string, target k8s.Target, filter c
 }
 
 func tickAfter(d time.Duration) tea.Cmd {
-	return tea.Tick(d, func(t time.Time) tea.Msg {
+	return tea.Tick(d, func(_ time.Time) tea.Msg {
 		return tickMsg{}
 	})
 }
 
 func pendingKeyTimeout() tea.Cmd {
-	return tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
+	return tea.Tick(500*time.Millisecond, func(_ time.Time) tea.Msg {
 		return pendingKeyTimeoutMsg{}
 	})
 }

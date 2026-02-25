@@ -62,7 +62,7 @@ func TestFindCiliumAgent_NoneFound(t *testing.T) {
 
 func TestQueryNode(t *testing.T) {
 	client := &mockPodExecer{
-		execFn: func(_, pod, container string, cmd []string) (string, error) {
+		execFn: func(_, pod, container string, _ []string) (string, error) {
 			if pod == "cilium-abc" && container == "cilium-agent" {
 				return "TCP IN 10.0.0.1:1234 -> 10.0.0.2:5432 ...\n", nil
 			}

@@ -42,22 +42,22 @@ func NewFilter(opts FilterOpts) (Filter, error) {
 	// Parse port.
 	if opts.Port != "" {
 		if idx := strings.Index(opts.Port, "-"); idx >= 0 {
-			min, err := strconv.Atoi(opts.Port[:idx])
+			lo, err := strconv.Atoi(opts.Port[:idx])
 			if err != nil {
 				return f, fmt.Errorf("invalid port range: %s", opts.Port)
 			}
-			max, err := strconv.Atoi(opts.Port[idx+1:])
+			hi, err := strconv.Atoi(opts.Port[idx+1:])
 			if err != nil {
 				return f, fmt.Errorf("invalid port range: %s", opts.Port)
 			}
-			if min < 1 || min > 65535 || max < 1 || max > 65535 {
+			if lo < 1 || lo > 65535 || hi < 1 || hi > 65535 {
 				return f, fmt.Errorf("invalid port range %s: ports must be 1-65535", opts.Port)
 			}
-			if min > max {
-				return f, fmt.Errorf("invalid port range %d-%d: min must be <= max", min, max)
+			if lo > hi {
+				return f, fmt.Errorf("invalid port range %d-%d: min must be <= max", lo, hi)
 			}
-			f.PortMin = min
-			f.PortMax = max
+			f.PortMin = lo
+			f.PortMax = hi
 		} else {
 			p, err := strconv.Atoi(opts.Port)
 			if err != nil {
@@ -116,19 +116,20 @@ func (f Filter) FilterSummary() string {
 	var parts []string
 
 	// Port.
-	if f.PortMin > 0 && f.PortMin == f.PortMax {
+	switch {
+	case f.PortMin > 0 && f.PortMin == f.PortMax:
 		parts = append(parts, fmt.Sprintf(":%d", f.PortMin))
-	} else if f.PortMin > 0 || f.PortMax > 0 {
-		min := f.PortMin
-		if min == 0 {
-			min = 1
+	case f.PortMin > 0 || f.PortMax > 0:
+		lo := f.PortMin
+		if lo == 0 {
+			lo = 1
 		}
-		max := f.PortMax
-		if max == 0 {
-			max = 65535
+		hi := f.PortMax
+		if hi == 0 {
+			hi = 65535
 		}
-		parts = append(parts, fmt.Sprintf(":%d-%d", min, max))
-	} else {
+		parts = append(parts, fmt.Sprintf(":%d-%d", lo, hi))
+	default:
 		parts = append(parts, "all ports")
 	}
 
@@ -242,15 +243,15 @@ func ParseCTOutput(output string, podIP string, filter Filter) []Peer {
 			}
 		}
 		if filter.PortMin > 0 || filter.PortMax > 0 {
-			min := filter.PortMin
-			max := filter.PortMax
-			if min == 0 {
-				min = 1
+			lo := filter.PortMin
+			hi := filter.PortMax
+			if lo == 0 {
+				lo = 1
 			}
-			if max == 0 {
-				max = 65535
+			if hi == 0 {
+				hi = 65535
 			}
-			if dstPort < min || dstPort > max {
+			if dstPort < lo || dstPort > hi {
 				continue
 			}
 		}

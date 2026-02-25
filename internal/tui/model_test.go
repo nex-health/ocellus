@@ -1217,9 +1217,9 @@ func TestHMLPeerView(t *testing.T) {
 	m3 := updated.(Model)
 	paneH := m3.peerPaneHeight()
 	expectedScroll := 10 + paneH - 1
-	max := m3.maxScroll()
-	if expectedScroll > max {
-		expectedScroll = max
+	scrollLimit := m3.maxScroll()
+	if expectedScroll > scrollLimit {
+		expectedScroll = scrollLimit
 	}
 	if m3.scroll != expectedScroll {
 		t.Errorf("L: scroll = %d, want %d", m3.scroll, expectedScroll)

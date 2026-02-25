@@ -29,10 +29,6 @@ const (
 	sortFieldCount // sentinel for cycling
 )
 
-var sortFieldNames = [sortFieldCount]string{
-	"src", "port", "proto", "state",
-}
-
 // Messages
 type tickMsg struct{}
 
@@ -480,8 +476,8 @@ func (m Model) updatePeerList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.paused = true
 			m.scroll++
 			peers := m.selectedPeers()
-			if max := len(peers) - 1; max >= 0 && m.scroll > max {
-				m.scroll = max
+			if last := len(peers) - 1; last >= 0 && m.scroll > last {
+				m.scroll = last
 			}
 		}
 		return m, nil
@@ -579,11 +575,11 @@ func (m Model) selectedPeers() []cilium.Peer {
 // maxScroll returns the maximum valid scroll value for the peer view.
 func (m Model) maxScroll() int {
 	peers := m.selectedPeers()
-	max := len(peers) - m.peerPaneHeight()
-	if max < 0 {
-		max = 0
+	limit := len(peers) - m.peerPaneHeight()
+	if limit < 0 {
+		limit = 0
 	}
-	return max
+	return limit
 }
 
 // clampScroll ensures scroll is within bounds.
@@ -591,9 +587,9 @@ func (m *Model) clampScroll() {
 	if m.mode != viewPeers {
 		return
 	}
-	max := m.maxScroll()
-	if m.scroll > max {
-		m.scroll = max
+	scrollMax := m.maxScroll()
+	if m.scroll > scrollMax {
+		m.scroll = scrollMax
 	}
 	if m.scroll < 0 {
 		m.scroll = 0
@@ -740,11 +736,12 @@ func (m Model) viewPodList(w int) string {
 		}
 
 		var countText string
-		if m.timestamp.IsZero() {
+		switch {
+		case m.timestamp.IsZero():
 			countText = "…"
-		} else if peerCount == 1 {
+		case peerCount == 1:
 			countText = "1 peer"
-		} else {
+		default:
 			countText = fmt.Sprintf("%d peers", peerCount)
 		}
 
@@ -759,11 +756,12 @@ func (m Model) viewPodList(w int) string {
 				icon = exitedIcon.String()
 			}
 			var countStr string
-			if m.timestamp.IsZero() {
+			switch {
+			case m.timestamp.IsZero():
 				countStr = peerCountStyle.Render(countText)
-			} else if peerCount > 0 {
+			case peerCount > 0:
 				countStr = peerCountActiveStyle.Render(countText)
-			} else {
+			default:
 				countStr = peerCountStyle.Render(countText)
 			}
 			line := fmt.Sprintf("  %s %-*s  %s", icon, maxNameW, name, countStr)
@@ -783,12 +781,13 @@ func (m Model) viewPodList(w int) string {
 	b.WriteString("\n")
 
 	// Status bar.
-	statusIndicator := ""
-	if len(m.lastErrors) > 0 {
+	var statusIndicator string
+	switch {
+	case len(m.lastErrors) > 0:
 		statusIndicator = errorStyle.Render("✘ " + errorSummary(m.lastErrors))
-	} else if m.paused {
+	case m.paused:
 		statusIndicator = pausedStyle.Render("● paused")
-	} else if m.polling {
+	case m.polling:
 		statusIndicator = pollingStyle.Render("◉ polling")
 	}
 	keys := fmt.Sprintf("  %s quit  %s navigate  %s select  %s next active  %s pause  %s help",
@@ -954,12 +953,13 @@ func (m Model) viewPeerList(w int) string {
 		}
 		b.WriteString(searchBarStyle.Width(w).Render(searchText + strings.Repeat(" ", padLen)))
 	} else {
-		statusIndicator := ""
-		if len(m.lastErrors) > 0 {
+		var statusIndicator string
+		switch {
+		case len(m.lastErrors) > 0:
 			statusIndicator = errorStyle.Render("✘ " + errorSummary(m.lastErrors))
-		} else if m.paused {
+		case m.paused:
 			statusIndicator = pausedStyle.Render("● paused")
-		} else if m.polling {
+		case m.polling:
 			statusIndicator = pollingStyle.Render("◉ polling")
 		}
 		scrollInfo := ""
