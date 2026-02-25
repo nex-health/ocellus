@@ -470,6 +470,16 @@ func TestNewFilter(t *testing.T) {
 			opts:    FilterOpts{Port: "5432-70000"},
 			wantErr: true,
 		},
+		{
+			name:    "invalid protocol",
+			opts:    FilterOpts{Proto: "foo"},
+			wantErr: true,
+		},
+		{
+			name:    "invalid protocol in list",
+			opts:    FilterOpts{Proto: "tcp,foo"},
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

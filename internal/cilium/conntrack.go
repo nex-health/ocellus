@@ -94,6 +94,13 @@ func NewFilter(opts FilterOpts) (Filter, error) {
 		}
 	}
 
+	// Validate protocols.
+	for _, p := range f.Protos {
+		if p != "TCP" && p != "UDP" {
+			return f, fmt.Errorf("unsupported protocol %q (valid: tcp, udp)", strings.ToLower(p))
+		}
+	}
+
 	// Parse source CIDR.
 	if opts.Src != "" {
 		cidrStr := opts.Src
