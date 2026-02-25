@@ -17,5 +17,9 @@ linters:
       - common-false-positives
       - legacy
       - std-error-handling
+    rules:
+      - linters: [revive]
+        path: internal/format/
+        text: "var-naming.*conflict"
     paths:
       - test/e2e

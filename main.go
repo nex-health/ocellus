@@ -99,7 +99,10 @@ func main() {
 	}
 
 	if *dump {
-		runDumpMode(client, cilium.NewAutoSource(), filter, pods, *outputFormat, *outputFile, *repeat, *timeout)
+		if err := runDumpMode(client, cilium.NewAutoSource(), filter, pods, *outputFormat, *outputFile, *repeat, *timeout); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 
@@ -131,14 +134,13 @@ func main() {
 	}
 }
 
-func runDumpMode(client tui.ClusterClient, source cilium.ConntrackSource, filter cilium.Filter, pods []k8s.PodInfo, format, outputFile string, repeatSec, timeoutSec int) {
+func runDumpMode(client tui.ClusterClient, source cilium.ConntrackSource, filter cilium.Filter, pods []k8s.PodInfo, format, outputFile string, repeatSec, timeoutSec int) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	f, err := capture.NewFormatter(format)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 
 	var w capture.Writer
@@ -146,14 +148,18 @@ func runDumpMode(client tui.ClusterClient, source cilium.ConntrackSource, filter
 	if outputFile != "" {
 		fw, err := capture.NewFileWriter(outputFile)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
+			return err
 		}
 		w = fw
 		closer = func() { fw.Close() }
 	} else {
 		w = capture.NewStreamWriter(os.Stdout)
 	}
+	defer func() {
+		if closer != nil {
+			closer()
+		}
+	}()
 
 	pollParams := poll.Params{
 		Client:  client,
@@ -165,17 +171,10 @@ func runDumpMode(client tui.ClusterClient, source cilium.ConntrackSource, filter
 
 	snap := poll.Once(ctx, pollParams)
 	if err := capture.DumpOnce(f, w, snap); err != nil {
-		if closer != nil {
-			closer()
-		}
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 	if repeatSec <= 0 {
-		if closer != nil {
-			closer()
-		}
-		return
+		return nil
 	}
 
 	ticker := time.NewTicker(time.Duration(repeatSec) * time.Second)
@@ -183,18 +182,11 @@ func runDumpMode(client tui.ClusterClient, source cilium.ConntrackSource, filter
 	for {
 		select {
 		case <-ctx.Done():
-			if closer != nil {
-				closer()
-			}
-			return
+			return nil
 		case <-ticker.C:
 			snap := poll.Once(ctx, pollParams)
 			if err := capture.DumpOnce(f, w, snap); err != nil {
-				if closer != nil {
-					closer()
-				}
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
+				return err
 			}
 		}
 	}

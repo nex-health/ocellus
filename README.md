@@ -1,6 +1,6 @@
 # Ocellus
 
-A TUI tool for monitoring TCP connections to Kubernetes pods via Cilium's BPF conntrack tables.
+A TUI tool for monitoring connections to Kubernetes pods via Cilium's BPF conntrack tables.
 
 ## Motivation
 

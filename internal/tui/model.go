@@ -1061,11 +1061,12 @@ func (m Model) viewPeerList(w int) string {
 				localColW = len(local)
 			}
 			var bs string
-			if p.RxBytes > 0 || p.TxBytes > 0 {
+			switch {
+			case p.RxBytes > 0 || p.TxBytes > 0:
 				bs = format.Bytes(p.RxBytes) + "/" + format.Bytes(p.TxBytes)
-			} else if p.Bytes > 0 {
+			case p.Bytes > 0:
 				bs = format.Bytes(p.Bytes)
-			} else {
+			default:
 				bs = "—"
 			}
 			bytesStrs[i] = bs

@@ -134,7 +134,7 @@ func TestAutoSourceRemembersPreference(t *testing.T) {
 	}
 }
 
-func TestAutoSourceConcurrentAccess(t *testing.T) {
+func TestAutoSourceConcurrentAccess(_ *testing.T) {
 	client := &mockPodExecer{
 		execFn: func(_, _, _ string, cmd []string) (string, error) {
 			if slices.Contains(cmd, "json") {

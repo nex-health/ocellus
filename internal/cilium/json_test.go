@@ -318,7 +318,7 @@ func TestJSONSourceQueryPeers(t *testing.T) {
 	jsonData, _ := json.Marshal(entries)
 
 	client := &mockPodExecer{
-		execFn: func(namespace, pod, container string, cmd []string) (string, error) {
+		execFn: func(_, _, _ string, cmd []string) (string, error) {
 			// Verify the command includes -o json.
 			if len(cmd) < 7 || cmd[5] != "-o" || cmd[6] != "json" {
 				t.Errorf("expected -o json in cmd, got %v", cmd)
