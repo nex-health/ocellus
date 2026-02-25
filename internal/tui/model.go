@@ -98,6 +98,13 @@ func New(cfg Config) Model {
 	}
 }
 
+// CloseRecorder closes the recorder if one exists.
+func (m Model) CloseRecorder() {
+	if m.recorder != nil {
+		m.recorder.Close()
+	}
+}
+
 // CaptureFilePath returns the capture file path if a recorder was used.
 func (m Model) CaptureFilePath() string {
 	if m.recorder != nil {

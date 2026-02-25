@@ -116,6 +116,7 @@ func main() {
 		os.Exit(1)
 	}
 	if fm, ok := finalModel.(tui.Model); ok {
+		fm.CloseRecorder()
 		if path := fm.CaptureFilePath(); path != "" {
 			fmt.Fprintf(os.Stderr, "Capture written to %s\n", path)
 		}
