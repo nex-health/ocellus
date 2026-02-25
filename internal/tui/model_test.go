@@ -1456,6 +1456,42 @@ func TestHeaderShowsTotalBytes(t *testing.T) {
 	}
 }
 
+func TestPollDeltaBytesPerSec(t *testing.T) {
+	m := testModel()
+	m.width = 120
+	m.height = 24
+
+	now := time.Now()
+
+	// First poll — no delta yet.
+	updated, _ := m.Update(pollResultMsg{
+		peers: map[string][]cilium.Peer{
+			"pod-1": {
+				{Src: "10.1.0.1:1234", DstPort: 5432, Bytes: 1000},
+			},
+		},
+		timestamp: now,
+	})
+	m2 := updated.(Model)
+	if m2.bytesPerSec != 0 {
+		t.Errorf("bytesPerSec = %d after first poll, want 0", m2.bytesPerSec)
+	}
+
+	// Second poll — 10 seconds later, 2000 more bytes.
+	updated, _ = m2.Update(pollResultMsg{
+		peers: map[string][]cilium.Peer{
+			"pod-1": {
+				{Src: "10.1.0.1:1234", DstPort: 5432, Bytes: 3000},
+			},
+		},
+		timestamp: now.Add(10 * time.Second),
+	})
+	m3 := updated.(Model)
+	if m3.bytesPerSec != 200 {
+		t.Errorf("bytesPerSec = %d, want 200 (2000 bytes / 10s)", m3.bytesPerSec)
+	}
+}
+
 func TestPeerViewSearchHighlightFilters(t *testing.T) {
 	m := testModel()
 	m.width = 120
