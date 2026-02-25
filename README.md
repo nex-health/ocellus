@@ -41,13 +41,24 @@ pod-name
 | `--state` | `established` | Connection state: `established`, `closing`, `all` |
 | `--timeout` | `0` | Per-poll timeout in seconds (0 = no timeout) |
 | `--kubeconfig` | standard | Path to kubeconfig |
+| `-o, --output-format` | `jsonl` | Capture format: `jsonl`, `json`, `csv`, `text` |
+| `-f, --output-file` | auto | Capture output file path |
+| `--dump` | off | Non-interactive dump mode (bypasses TUI) |
+| `--repeat` | `0` | Repeat interval in seconds for dump mode (0 = one-shot) |
+| `--version` | | Print version and exit |
 
 ### Examples
 
 ```sh
+# TUI mode
 ocellus -n production -p 5432 deploy/pgbouncer
 ocellus -p 5432-5440 --state all sts/postgres
 ocellus --src 10.4.166.0/24 my-pod-name
+
+# Dump mode (non-interactive)
+ocellus --dump -n production -p 5432 deploy/pgbouncer          # one-shot dump to stdout
+ocellus --dump -o json -f snapshot.json deploy/myapp            # JSON to file
+ocellus --dump --repeat 60 -f connections.jsonl sts/postgres    # periodic dump every 60s
 ```
 
 ## Keybindings
@@ -65,6 +76,8 @@ ocellus --src 10.4.166.0/24 my-pod-name
 | `Ctrl+d` / `Ctrl+u` | Half-page down/up |
 | `p`, `Space` | Toggle pause |
 | `r` | Force refresh |
+| `d` | Dump snapshot to file |
+| `R` | Toggle continuous recording |
 | `?` | Help |
 | `q`, `Ctrl+C` | Quit |
 
@@ -86,6 +99,51 @@ ocellus --src 10.4.166.0/24 my-pod-name
 | `Esc` | Back to pod list / clear search |
 | `p`, `Space` | Toggle pause |
 | `q`, `Ctrl+C` | Quit |
+
+## Capturing and Recording
+
+Ocellus can capture connection state to files for later analysis.
+
+### On-demand snapshots
+
+Press `d` in the TUI to dump the current connection state to a file. The file is created in the current directory with an auto-generated name (e.g. `ocellus-2026-02-25T14-30-00.jsonl`), or at the path specified by `--output-file`.
+
+### Continuous recording
+
+Press `R` in the TUI to toggle continuous recording. While active, every poll result is written to the capture file and a `[REC]` indicator appears in the header. Connection events (new peers, disconnects, pod lifecycle, traffic spikes) are also logged.
+
+### Dump mode
+
+Use `--dump` for non-interactive, scriptable captures that bypass the TUI entirely:
+
+```sh
+# One-shot snapshot to stdout
+ocellus --dump -p 5432 deploy/pgbouncer
+
+# Periodic snapshots every 30s to a file
+ocellus --dump --repeat 30 -f connections.jsonl deploy/pgbouncer
+
+# CSV format for spreadsheet import
+ocellus --dump -o csv -f snapshot.csv sts/postgres
+```
+
+### Output formats
+
+| Format | Description |
+|--------|-------------|
+| `jsonl` | One JSON object per line (default) — structured, streamable |
+| `json` | Pretty-printed JSON — human-readable |
+| `csv` | CSV with headers — spreadsheet/database import |
+| `text` | Human-readable table — similar to TUI display |
+
+### Event detection
+
+When recording continuously (TUI `R` key), ocellus detects and logs events by comparing consecutive snapshots:
+
+- **peer_added** / **peer_removed** — connection lifecycle
+- **pod_discovered** / **pod_exited** — pod lifecycle
+- **traffic_spike** — byte count exceeds 2x the previous poll
+- **poll_error** — new polling errors
 
 ## Prerequisites
 
