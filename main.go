@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	flag "github.com/spf13/pflag"
 	"k8s.io/klog/v2"
 
+	"github.com/aurelcanciu/ocellus/internal/capture"
 	"github.com/aurelcanciu/ocellus/internal/cilium"
 	"github.com/aurelcanciu/ocellus/internal/k8s"
 	"github.com/aurelcanciu/ocellus/internal/tui"
@@ -31,6 +33,10 @@ func main() {
 	interval := flag.IntP("interval", "i", 10, "Polling interval in seconds")
 	timeout := flag.Int("timeout", 0, "Poll timeout in seconds (0 = no timeout)")
 	kubeconfig := flag.String("kubeconfig", "", "Path to kubeconfig (default: standard resolution)")
+	outputFormat := flag.StringP("output-format", "o", "jsonl", "Capture format: jsonl, json, csv, text")
+	outputFile := flag.StringP("output-file", "f", "", "Capture output file (default: auto-generated)")
+	dump := flag.Bool("dump", false, "Non-interactive dump mode (bypasses TUI)")
+	repeat := flag.Int("repeat", 0, "Repeat interval in seconds for dump mode (0 = one-shot)")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: ocellus [flags] <target>\n\n")
 		fmt.Fprintf(os.Stderr, "Target formats:\n")
@@ -84,21 +90,120 @@ func main() {
 		os.Exit(1)
 	}
 
+	if *dump {
+		runDumpMode(client, cilium.NewAutoSource(), *namespace, target, filter, pods, *outputFormat, *outputFile, *repeat, *timeout)
+		return
+	}
+
 	m := tui.New(tui.Config{
-		Filter:      filter,
-		Namespace:   *namespace,
-		Context:     client.Context(),
-		Target:      target,
-		Interval:    time.Duration(*interval) * time.Second,
-		PollTimeout: time.Duration(*timeout) * time.Second,
-		Client:      client,
-		Source:      cilium.NewAutoSource(),
-		Pods:        pods,
+		Filter:       filter,
+		Namespace:    *namespace,
+		Context:      client.Context(),
+		Target:       target,
+		Interval:     time.Duration(*interval) * time.Second,
+		PollTimeout:  time.Duration(*timeout) * time.Second,
+		Client:       client,
+		Source:       cilium.NewAutoSource(),
+		Pods:         pods,
+		OutputFormat: *outputFormat,
+		OutputFile:   *outputFile,
 	})
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+func runDumpMode(client tui.ClusterClient, source cilium.ConntrackSource, namespace string, target k8s.Target, filter cilium.Filter, pods []k8s.PodInfo, format, outputFile string, repeatSec, timeoutSec int) {
+	f, err := capture.NewFormatter(format)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	var w capture.Writer
+	if outputFile != "" {
+		fw, err := capture.NewFileWriter(outputFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		defer fw.Close()
+		w = fw
+	} else {
+		w = capture.NewStreamWriter(os.Stdout)
+	}
+
+	for {
+		snap := pollOnce(client, source, namespace, target, filter, pods, time.Duration(timeoutSec)*time.Second)
+		if err := capture.DumpOnce(f, w, snap); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		if repeatSec <= 0 {
+			return
+		}
+		time.Sleep(time.Duration(repeatSec) * time.Second)
+	}
+}
+
+func pollOnce(client tui.ClusterClient, source cilium.ConntrackSource, namespace string, target k8s.Target, filter cilium.Filter, pods []k8s.PodInfo, timeout time.Duration) capture.Snapshot {
+	ctx := context.Background()
+
+	nodeGroups := make(map[string][]k8s.PodInfo)
+	for _, p := range pods {
+		nodeGroups[p.Node] = append(nodeGroups[p.Node], p)
+	}
+
+	var mu sync.Mutex
+	peerResults := make(map[string][]cilium.Peer)
+	var pollErrors []string
+
+	var wg sync.WaitGroup
+	for node, nodePods := range nodeGroups {
+		wg.Add(1)
+		go func(node string, nodePods []k8s.PodInfo) {
+			defer wg.Done()
+			nodeCtx := ctx
+			if timeout > 0 {
+				var cancel context.CancelFunc
+				nodeCtx, cancel = context.WithTimeout(ctx, timeout)
+				defer cancel()
+			}
+			agentName, err := cilium.FindCiliumAgent(nodeCtx, client, node)
+			if err != nil {
+				mu.Lock()
+				pollErrors = append(pollErrors, fmt.Sprintf("node %s: %v", node, err))
+				mu.Unlock()
+				return
+			}
+			podIPs := make([]string, len(nodePods))
+			for i, p := range nodePods {
+				podIPs[i] = p.IP
+			}
+			results, err := source.QueryPeers(nodeCtx, client, agentName, podIPs, filter)
+			if err != nil {
+				mu.Lock()
+				pollErrors = append(pollErrors, fmt.Sprintf("node %s: %v", node, err))
+				mu.Unlock()
+				return
+			}
+			mu.Lock()
+			for _, p := range nodePods {
+				if peers, ok := results[p.IP]; ok {
+					peerResults[p.Name] = peers
+				}
+			}
+			mu.Unlock()
+		}(node, nodePods)
+	}
+	wg.Wait()
+
+	return capture.Snapshot{
+		Timestamp: time.Now().UTC(),
+		Pods:      peerResults,
+		Errors:    pollErrors,
 	}
 }
