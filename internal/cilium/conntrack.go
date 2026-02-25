@@ -323,15 +323,36 @@ func ParseCTOutput(output string, podIP string, filter Filter) []Peer {
 			state = "closing"
 		}
 
-		// Parse rich fields.
+		// Parse rich fields. Cilium versions use different naming:
+		// - Newer: RxBytes, TxBytes, RxPackets, TxPackets
+		// - Older camelCase: Bytes, Packets (combined)
+		// - Some versions: rx_bytes, tx_bytes, rx_packets, tx_packets
 		rxBytes := parseKVUint(line, "RxBytes")
+		if rxBytes == 0 {
+			rxBytes = parseKVUint(line, "rx_bytes")
+		}
 		txBytes := parseKVUint(line, "TxBytes")
+		if txBytes == 0 {
+			txBytes = parseKVUint(line, "tx_bytes")
+		}
 		rxPackets := parseKVUint(line, "RxPackets")
+		if rxPackets == 0 {
+			rxPackets = parseKVUint(line, "rx_packets")
+		}
 		txPackets := parseKVUint(line, "TxPackets")
+		if txPackets == 0 {
+			txPackets = parseKVUint(line, "tx_packets")
+		}
 
 		// Older Cilium uses "Packets" and "Bytes" (combined).
 		totalBytes := parseKVUint(line, "Bytes")
+		if totalBytes == 0 {
+			totalBytes = parseKVUint(line, "bytes")
+		}
 		totalPackets := parseKVUint(line, "Packets")
+		if totalPackets == 0 {
+			totalPackets = parseKVUint(line, "packets")
+		}
 
 		// Prefer split fields; fall back to combined.
 		if rxBytes == 0 && txBytes == 0 && totalBytes > 0 {

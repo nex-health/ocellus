@@ -313,6 +313,26 @@ func TestParseCTOutput_SplitFieldFormat(t *testing.T) {
 	}
 }
 
+func TestParseCTOutput_UnderscoreFieldFormat(t *testing.T) {
+	// Some Cilium versions use snake_case field names.
+	output := `TCP IN 10.0.0.1:1000 -> 10.1.0.1:5432 expires=100 rx_packets=3 rx_bytes=300 RxFlagsSeen=0x02 LastRxReport=90 tx_packets=7 tx_bytes=1400 TxFlagsSeen=0x12 LastTxReport=95 Flags=0x0012 [ SeenNonSyn ] RevNAT=0 SourceSecurityID=6 IfIndex=0
+`
+	peers := ParseCTOutput(output, "10.1.0.1", Filter{PortMin: 5432, PortMax: 5432})
+	if len(peers) != 1 {
+		t.Fatalf("expected 1 peer, got %d", len(peers))
+	}
+	p := peers[0]
+	if p.RxBytes != 300 {
+		t.Errorf("RxBytes = %d, want 300", p.RxBytes)
+	}
+	if p.TxBytes != 1400 {
+		t.Errorf("TxBytes = %d, want 1400", p.TxBytes)
+	}
+	if p.Bytes != 1700 {
+		t.Errorf("Bytes = %d, want 1700 (300+1400)", p.Bytes)
+	}
+}
+
 func TestComparePeerAddr(t *testing.T) {
 	tests := []struct {
 		a, b string
