@@ -1438,6 +1438,24 @@ func TestPodListShowsTotalBytes(t *testing.T) {
 	}
 }
 
+func TestHeaderShowsTotalBytes(t *testing.T) {
+	m := testModel()
+	m.width = 120
+	m.height = 24
+	m.timestamp = time.Now()
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, Bytes: 5242880},
+	}
+	m.peers["pod-2"] = []cilium.Peer{
+		{Src: "10.1.0.2:5678", DstPort: 5432, Bytes: 5242880},
+	}
+
+	view := m.View()
+	if !strings.Contains(view, "10.0 M") {
+		t.Error("Header should show total bytes across all pods")
+	}
+}
+
 func TestPeerViewSearchHighlightFilters(t *testing.T) {
 	m := testModel()
 	m.width = 120

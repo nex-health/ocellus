@@ -676,11 +676,15 @@ func (m Model) viewHelp(w int) string {
 func (m Model) renderHeader(b *strings.Builder, w int) {
 	active := 0
 	totalConns := 0
+	var totalBytes uint64
 	for _, p := range m.config.Pods {
 		if !m.exited[p.Name] {
 			active++
 		}
 		totalConns += len(m.peers[p.Name])
+		for _, peer := range m.peers[p.Name] {
+			totalBytes += peer.Bytes
+		}
 	}
 
 	ts := ""
@@ -695,8 +699,12 @@ func (m Model) renderHeader(b *strings.Builder, w int) {
 		headerText = fmt.Sprintf("  ◎ ocellus  %s  %s   %d pods   loading…",
 			target, filterLabel, len(m.config.Pods))
 	} else {
-		headerText = fmt.Sprintf("  ◎ ocellus  %s  %s   %d/%d active   %d connections   %s",
-			target, filterLabel, active, len(m.config.Pods), totalConns, ts)
+		bytesStr := ""
+		if totalBytes > 0 {
+			bytesStr = "   " + format.Bytes(totalBytes)
+		}
+		headerText = fmt.Sprintf("  ◎ ocellus  %s  %s   %d/%d active   %d connections%s   %s",
+			target, filterLabel, active, len(m.config.Pods), totalConns, bytesStr, ts)
 	}
 	b.WriteString(headerStyle.Width(w).Render(headerText))
 	b.WriteString("\n")
