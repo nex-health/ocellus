@@ -216,21 +216,21 @@ Releases are automated via [GoReleaser](https://goreleaser.com/) and GitHub Acti
 3. **Wait for the [Release workflow](../../actions/workflows/release.yml).** GoReleaser will:
    - Build `CGO_ENABLED=0` static binaries for linux/darwin/windows on amd64/arm64
    - Stamp `main.version` with the tag
-   - Create a GitHub Release with archives, checksums, and an auto-generated changelog
+   - Create a GitHub Release with binaries, checksums, and an auto-generated changelog
 
-4. **Verify the release** on the [Releases page](../../releases). Binaries follow the naming convention `ocellus_<version>_<os>_<arch>.tar.gz` (`.zip` for Windows).
+4. **Verify the release** on the [Releases page](../../releases). Binaries follow the naming convention `ocellus_<version>_<os>_<arch>` (`.exe` for Windows).
 
 ### What's included
 
 | Artifact | Description |
 |----------|-------------|
-| `ocellus_*_linux_amd64.tar.gz` | Linux x86-64 |
-| `ocellus_*_linux_arm64.tar.gz` | Linux ARM64 |
-| `ocellus_*_darwin_amd64.tar.gz` | macOS Intel |
-| `ocellus_*_darwin_arm64.tar.gz` | macOS Apple Silicon |
-| `ocellus_*_windows_amd64.zip` | Windows x86-64 |
-| `ocellus_*_windows_arm64.zip` | Windows ARM64 |
-| `checksums.txt` | SHA-256 checksums for all archives |
+| `ocellus_*_linux_amd64` | Linux x86-64 |
+| `ocellus_*_linux_arm64` | Linux ARM64 |
+| `ocellus_*_darwin_amd64` | macOS Intel |
+| `ocellus_*_darwin_arm64` | macOS Apple Silicon |
+| `ocellus_*_windows_amd64.exe` | Windows x86-64 |
+| `ocellus_*_windows_arm64.exe` | Windows ARM64 |
+| `checksums.txt` | SHA-256 checksums for all binaries |
 
 ### Changelog
 
