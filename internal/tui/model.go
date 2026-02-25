@@ -32,6 +32,46 @@ const (
 	sortFieldCount // sentinel for cycling
 )
 
+type stateFilter int
+
+const (
+	stateAll stateFilter = iota
+	stateEstablished
+	stateClosing
+	stateFilterCount // sentinel for cycling
+)
+
+func (f stateFilter) String() string {
+	switch f {
+	case stateEstablished:
+		return "established"
+	case stateClosing:
+		return "closing"
+	default:
+		return "all"
+	}
+}
+
+type protoFilter int
+
+const (
+	protoAll protoFilter = iota
+	protoTCP
+	protoUDP
+	protoFilterCount // sentinel for cycling
+)
+
+func (f protoFilter) String() string {
+	switch f {
+	case protoTCP:
+		return "TCP"
+	case protoUDP:
+		return "UDP"
+	default:
+		return "all"
+	}
+}
+
 // Messages
 type tickMsg struct{}
 
@@ -76,6 +116,8 @@ type Model struct {
 	quitting    bool
 	sortField   sortField
 	sortReverse bool
+	stateFilter stateFilter
+	protoFilter protoFilter
 	searching   bool
 	searchQuery string
 	showHelp   bool
@@ -572,6 +614,16 @@ func (m Model) updatePeerList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = viewPods
 		m.scroll = 0
 		m.searchQuery = ""
+		m.stateFilter = stateAll
+		m.protoFilter = protoAll
+		return m, nil
+	case "f":
+		m.stateFilter = (m.stateFilter + 1) % stateFilterCount
+		m.scroll = 0
+		return m, nil
+	case "F":
+		m.protoFilter = (m.protoFilter + 1) % protoFilterCount
+		m.scroll = 0
 		return m, nil
 	case "s":
 		m.sortField = (m.sortField + 1) % sortFieldCount
@@ -628,17 +680,24 @@ func highlightMatch(text, query string) string {
 	return before + searchMatchStyle.Render(match) + after
 }
 
-// filteredPeers returns peers matching the current search query.
+// filteredPeers returns peers matching the current search query and quick filters.
 func (m Model) filteredPeers(peers []cilium.Peer) []cilium.Peer {
-	if m.searchQuery == "" {
+	if m.searchQuery == "" && m.stateFilter == stateAll && m.protoFilter == protoAll {
 		return peers
 	}
 	q := strings.ToLower(m.searchQuery)
 	var filtered []cilium.Peer
 	for _, p := range peers {
-		if strings.Contains(strings.ToLower(p.Src), q) {
-			filtered = append(filtered, p)
+		if m.stateFilter != stateAll && !strings.EqualFold(p.State, m.stateFilter.String()) {
+			continue
 		}
+		if m.protoFilter != protoAll && !strings.EqualFold(p.Proto, m.protoFilter.String()) {
+			continue
+		}
+		if q != "" && !strings.Contains(strings.ToLower(p.Src), q) {
+			continue
+		}
+		filtered = append(filtered, p)
 	}
 	return filtered
 }
@@ -752,6 +811,8 @@ func (m Model) viewHelp(w int) string {
 		"  r             Resume polling",
 		"  s             Cycle sort (src, port, proto, state, bytes)",
 		"  S             Toggle reverse sort",
+		"  f             Cycle state filter (all, established, closing)",
+		"  F             Cycle protocol filter (all, TCP, UDP)",
 		"  /             Search peers",
 		"  n/N           Next/prev search match",
 		"  tab/shift+tab Jump to next/prev pod with peers",
@@ -877,7 +938,8 @@ func (m Model) viewPodList(w int) string {
 
 	for i := start; i < end; i++ {
 		p := m.config.Pods[i]
-		peerCount := len(m.peers[p.Name])
+		filtered := m.filteredPeers(m.peers[p.Name])
+		peerCount := len(filtered)
 
 		name := p.Name
 		if m.exited[p.Name] {
@@ -885,7 +947,7 @@ func (m Model) viewPodList(w int) string {
 		}
 
 		var totalBytes uint64
-		for _, peer := range m.peers[p.Name] {
+		for _, peer := range filtered {
 			totalBytes += peer.Bytes
 		}
 
@@ -990,12 +1052,18 @@ func (m Model) viewPeerList(w int) string {
 
 	// Subheader.
 	countLabel := fmt.Sprintf("%d connections", len(peers))
-	if m.searchQuery != "" && len(peers) != len(allPeers) {
+	if len(peers) != len(allPeers) {
 		countLabel = fmt.Sprintf("%d/%d connections", len(peers), len(allPeers))
 	}
 	subheader := fmt.Sprintf("Peers for %s:   %s",
 		selected.Name,
 		peerCountStyle.Render(countLabel))
+	if m.stateFilter != stateAll {
+		subheader += "  " + filterActiveStyle.Render(fmt.Sprintf("[state:%s]", m.stateFilter))
+	}
+	if m.protoFilter != protoAll {
+		subheader += "  " + filterActiveStyle.Render(fmt.Sprintf("[proto:%s]", m.protoFilter))
+	}
 	b.WriteString(detailHeaderStyle.Render(subheader))
 	b.WriteString("\n")
 
@@ -1159,10 +1227,11 @@ func (m Model) viewPeerList(w int) string {
 			scrollInfo = fmt.Sprintf("  [%d/%d]", m.scroll+1, maxScroll+1)
 		}
 
-		keys := fmt.Sprintf("  %s back  %s scroll  %s sort  %s search  %s pause  %s quit%s",
+		keys := fmt.Sprintf("  %s back  %s scroll  %s sort  %s filter  %s search  %s pause  %s quit%s",
 			statusBarKeyStyle.Render("esc"),
 			statusBarKeyStyle.Render("j/k"),
 			statusBarKeyStyle.Render("s/S"),
+			statusBarKeyStyle.Render("f/F"),
 			statusBarKeyStyle.Render("/"),
 			statusBarKeyStyle.Render("p"),
 			statusBarKeyStyle.Render("q"),

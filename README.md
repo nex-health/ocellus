@@ -121,6 +121,8 @@ ocellus --dump --repeat 60 -f connections.jsonl sts/postgres    # periodic dump 
 | `Home/End` | Jump to top/bottom |
 | `s` | Cycle sort (src, port, proto, state, bytes) |
 | `S` | Toggle reverse sort |
+| `f` | Cycle state filter (all, established, closing) |
+| `F` | Cycle protocol filter (all, TCP, UDP) |
 | `/` | Search peers by IP |
 | `n/N` | Next/prev search match |
 | `Esc` | Back to pod list / clear search |

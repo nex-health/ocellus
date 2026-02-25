@@ -2272,3 +2272,335 @@ func TestDumpStatusNotShownWhenStale(t *testing.T) {
 		t.Error("pod list status bar should NOT show stale dumpStatus")
 	}
 }
+
+// --- Quick filter tests ---
+
+func TestStateFilterCycling(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 24
+	m.mode = viewPeers
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, State: "established"},
+	}
+
+	if m.stateFilter != stateAll {
+		t.Errorf("initial stateFilter = %d, want stateAll", m.stateFilter)
+	}
+
+	// f -> established
+	updated, _ := m.Update(keyMsg("f"))
+	m2 := updated.(Model)
+	if m2.stateFilter != stateEstablished {
+		t.Errorf("stateFilter after f = %d, want stateEstablished", m2.stateFilter)
+	}
+
+	// f -> closing
+	updated, _ = m2.Update(keyMsg("f"))
+	m3 := updated.(Model)
+	if m3.stateFilter != stateClosing {
+		t.Errorf("stateFilter after 2nd f = %d, want stateClosing", m3.stateFilter)
+	}
+
+	// f -> all (wrap)
+	updated, _ = m3.Update(keyMsg("f"))
+	m4 := updated.(Model)
+	if m4.stateFilter != stateAll {
+		t.Errorf("stateFilter after 3rd f = %d, want stateAll", m4.stateFilter)
+	}
+}
+
+func TestProtoFilterCycling(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 24
+	m.mode = viewPeers
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, Proto: "TCP"},
+	}
+
+	if m.protoFilter != protoAll {
+		t.Errorf("initial protoFilter = %d, want protoAll", m.protoFilter)
+	}
+
+	// F -> TCP
+	updated, _ := m.Update(keyMsg("F"))
+	m2 := updated.(Model)
+	if m2.protoFilter != protoTCP {
+		t.Errorf("protoFilter after F = %d, want protoTCP", m2.protoFilter)
+	}
+
+	// F -> UDP
+	updated, _ = m2.Update(keyMsg("F"))
+	m3 := updated.(Model)
+	if m3.protoFilter != protoUDP {
+		t.Errorf("protoFilter after 2nd F = %d, want protoUDP", m3.protoFilter)
+	}
+
+	// F -> all (wrap)
+	updated, _ = m3.Update(keyMsg("F"))
+	m4 := updated.(Model)
+	if m4.protoFilter != protoAll {
+		t.Errorf("protoFilter after 3rd F = %d, want protoAll", m4.protoFilter)
+	}
+}
+
+func TestFilterResetsScroll(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 12
+	m.mode = viewPeers
+	m.scroll = 5
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, State: "established"},
+	}
+
+	updated, _ := m.Update(keyMsg("f"))
+	m2 := updated.(Model)
+	if m2.scroll != 0 {
+		t.Errorf("scroll = %d after f, want 0", m2.scroll)
+	}
+
+	m2.scroll = 5
+	updated, _ = m2.Update(keyMsg("F"))
+	m3 := updated.(Model)
+	if m3.scroll != 0 {
+		t.Errorf("scroll = %d after F, want 0", m3.scroll)
+	}
+}
+
+func TestStateFilterExcludesNonMatching(t *testing.T) {
+	m := testModel()
+	m.stateFilter = stateEstablished
+	peers := []cilium.Peer{
+		{Src: "10.1.0.1:1000", DstPort: 5432, State: "established"},
+		{Src: "10.1.0.2:2000", DstPort: 5432, State: "closing"},
+		{Src: "10.1.0.3:3000", DstPort: 5432, State: "established"},
+	}
+
+	filtered := m.filteredPeers(peers)
+	if len(filtered) != 2 {
+		t.Errorf("filtered peers = %d, want 2 (established only)", len(filtered))
+	}
+	for _, p := range filtered {
+		if p.State != "established" {
+			t.Errorf("unexpected state %q in filtered results", p.State)
+		}
+	}
+}
+
+func TestProtoFilterExcludesNonMatching(t *testing.T) {
+	m := testModel()
+	m.protoFilter = protoTCP
+	peers := []cilium.Peer{
+		{Src: "10.1.0.1:1000", DstPort: 5432, Proto: "TCP"},
+		{Src: "10.1.0.2:2000", DstPort: 5432, Proto: "UDP"},
+		{Src: "10.1.0.3:3000", DstPort: 5432, Proto: "TCP"},
+	}
+
+	filtered := m.filteredPeers(peers)
+	if len(filtered) != 2 {
+		t.Errorf("filtered peers = %d, want 2 (TCP only)", len(filtered))
+	}
+	for _, p := range filtered {
+		if p.Proto != "TCP" {
+			t.Errorf("unexpected proto %q in filtered results", p.Proto)
+		}
+	}
+}
+
+func TestStateFilterAndSearchCompose(t *testing.T) {
+	m := testModel()
+	m.stateFilter = stateEstablished
+	m.searchQuery = "10.1"
+	peers := []cilium.Peer{
+		{Src: "10.1.0.1:1000", DstPort: 5432, State: "established"},
+		{Src: "10.1.0.2:2000", DstPort: 5432, State: "closing"},
+		{Src: "10.2.0.1:3000", DstPort: 5432, State: "established"},
+	}
+
+	filtered := m.filteredPeers(peers)
+	if len(filtered) != 1 {
+		t.Errorf("filtered peers = %d, want 1 (established + 10.1)", len(filtered))
+	}
+	if len(filtered) > 0 && filtered[0].Src != "10.1.0.1:1000" {
+		t.Errorf("filtered peer = %s, want 10.1.0.1:1000", filtered[0].Src)
+	}
+}
+
+func TestFilterBadgeShownWhenActive(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.Ascii)
+	m := testModel()
+	m.width = 120
+	m.height = 24
+	m.mode = viewPeers
+	m.stateFilter = stateEstablished
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, State: "established"},
+		{Src: "10.1.0.2:5678", DstPort: 5432, State: "closing"},
+	}
+
+	view := m.View()
+	if !strings.Contains(view, "[state:established]") {
+		t.Error("view should show [state:established] badge when state filter is active")
+	}
+}
+
+func TestFilterBadgeHiddenWhenAll(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.Ascii)
+	m := testModel()
+	m.width = 120
+	m.height = 24
+	m.mode = viewPeers
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, State: "established"},
+	}
+
+	view := m.View()
+	if strings.Contains(view, "[state:") {
+		t.Error("view should not show state filter badge when filter is 'all'")
+	}
+	if strings.Contains(view, "[proto:") {
+		t.Error("view should not show proto filter badge when filter is 'all'")
+	}
+}
+
+func TestProtoBadgeShownWhenActive(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.Ascii)
+	m := testModel()
+	m.width = 120
+	m.height = 24
+	m.mode = viewPeers
+	m.protoFilter = protoTCP
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, Proto: "TCP"},
+	}
+
+	view := m.View()
+	if !strings.Contains(view, "[proto:TCP]") {
+		t.Error("view should show [proto:TCP] badge when proto filter is active")
+	}
+}
+
+func TestPodListCountsReflectFilter(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.Ascii)
+	m := testModel()
+	m.width = 120
+	m.height = 24
+	m.timestamp = time.Now()
+	m.stateFilter = stateEstablished
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, State: "established"},
+		{Src: "10.1.0.2:5678", DstPort: 5432, State: "closing"},
+	}
+
+	view := m.View()
+	// Pod list should show 1 peer (only established), not 2.
+	if !strings.Contains(view, "1 peer") {
+		t.Error("pod list should reflect filtered peer count (1 peer)")
+	}
+}
+
+func TestEscClearsFilters(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 24
+	m.mode = viewPeers
+	m.stateFilter = stateEstablished
+	m.protoFilter = protoTCP
+
+	updated, _ := m.Update(keyMsg("esc"))
+	m2 := updated.(Model)
+	if m2.stateFilter != stateAll {
+		t.Errorf("stateFilter after esc = %d, want stateAll", m2.stateFilter)
+	}
+	if m2.protoFilter != protoAll {
+		t.Errorf("protoFilter after esc = %d, want protoAll", m2.protoFilter)
+	}
+	if m2.mode != viewPods {
+		t.Errorf("mode after esc = %d, want viewPods", m2.mode)
+	}
+}
+
+func TestHelpShowsFilterKeys(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.Ascii)
+	m := testModel()
+	m.width = 120
+	m.height = 40
+	m.showHelp = true
+
+	output := m.View()
+	if !strings.Contains(output, "Cycle state filter") {
+		t.Error("help should show state filter keybinding")
+	}
+	if !strings.Contains(output, "Cycle protocol filter") {
+		t.Error("help should show protocol filter keybinding")
+	}
+}
+
+func TestFilteredCountInSubheader(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.Ascii)
+	m := testModel()
+	m.width = 120
+	m.height = 24
+	m.mode = viewPeers
+	m.stateFilter = stateEstablished
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, State: "established"},
+		{Src: "10.1.0.2:5678", DstPort: 5432, State: "closing"},
+		{Src: "10.1.0.3:9012", DstPort: 5432, State: "established"},
+	}
+
+	view := m.View()
+	if !strings.Contains(view, "2/3 connections") {
+		t.Error("subheader should show '2/3 connections' when filter reduces count")
+	}
+}
+
+func TestPeerViewStatusBarShowsFilterHint(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.Ascii)
+	m := testModel()
+	m.width = 120
+	m.height = 24
+	m.mode = viewPeers
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432},
+	}
+
+	view := m.View()
+	if !strings.Contains(view, "f/F") {
+		t.Error("peer view status bar should show 'f/F' filter hint")
+	}
+}
+
+func TestStateFilterStringMethods(t *testing.T) {
+	tests := []struct {
+		filter stateFilter
+		want   string
+	}{
+		{stateAll, "all"},
+		{stateEstablished, "established"},
+		{stateClosing, "closing"},
+	}
+	for _, tt := range tests {
+		if got := tt.filter.String(); got != tt.want {
+			t.Errorf("stateFilter(%d).String() = %q, want %q", tt.filter, got, tt.want)
+		}
+	}
+}
+
+func TestProtoFilterStringMethods(t *testing.T) {
+	tests := []struct {
+		filter protoFilter
+		want   string
+	}{
+		{protoAll, "all"},
+		{protoTCP, "TCP"},
+		{protoUDP, "UDP"},
+	}
+	for _, tt := range tests {
+		if got := tt.filter.String(); got != tt.want {
+			t.Errorf("protoFilter(%d).String() = %q, want %q", tt.filter, got, tt.want)
+		}
+	}
+}

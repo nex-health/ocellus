@@ -94,6 +94,8 @@ var (
 
 	searchMatchStyle = lipgloss.NewStyle().Foreground(colorYellow).Bold(true)
 
+	filterActiveStyle = lipgloss.NewStyle().Foreground(colorCyan).Bold(true)
+
 	searchBarStyle = lipgloss.NewStyle().
 			Background(colorBg).
 			Foreground(colorFg).
