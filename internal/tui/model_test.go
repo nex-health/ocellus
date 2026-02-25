@@ -1529,3 +1529,496 @@ func TestPeerViewSearchHighlightFilters(t *testing.T) {
 		t.Error("view should show filtered count")
 	}
 }
+
+// --- Coverage gap tests ---
+
+func TestSortPeersAllFieldsAndReverse(t *testing.T) {
+	peers := []cilium.Peer{
+		{Src: "10.1.0.2:2000", DstPort: 80, Proto: "UDP", State: "closing", Bytes: 500},
+		{Src: "10.1.0.1:1000", DstPort: 443, Proto: "TCP", State: "established", Bytes: 100},
+		{Src: "10.1.0.3:3000", DstPort: 22, Proto: "TCP", State: "closing", Bytes: 9999},
+	}
+
+	tests := []struct {
+		field   sortField
+		reverse bool
+		first   string // expected Src of first element
+		last    string // expected Src of last element
+	}{
+		{sortSrc, false, "10.1.0.1:1000", "10.1.0.3:3000"},
+		{sortSrc, true, "10.1.0.3:3000", "10.1.0.1:1000"},
+		{sortPort, false, "10.1.0.3:3000", "10.1.0.1:1000"},  // 22, 80, 443
+		{sortPort, true, "10.1.0.1:1000", "10.1.0.3:3000"},   // 443, 80, 22
+		{sortProto, false, "10.1.0.1:1000", "10.1.0.2:2000"}, // TCP < UDP
+		{sortProto, true, "10.1.0.2:2000", "10.1.0.1:1000"},
+		{sortState, false, "10.1.0.2:2000", "10.1.0.1:1000"}, // closing < established
+		{sortState, true, "10.1.0.1:1000", "10.1.0.2:2000"},
+		{sortBytes, false, "10.1.0.1:1000", "10.1.0.3:3000"}, // 100, 500, 9999
+		{sortBytes, true, "10.1.0.3:3000", "10.1.0.1:1000"},
+	}
+
+	for _, tt := range tests {
+		label := fmt.Sprintf("field=%d/reverse=%v", tt.field, tt.reverse)
+		t.Run(label, func(t *testing.T) {
+			sorted := sortPeers(peers, tt.field, tt.reverse)
+			if sorted[0].Src != tt.first {
+				t.Errorf("first = %s, want %s", sorted[0].Src, tt.first)
+			}
+			if sorted[len(sorted)-1].Src != tt.last {
+				t.Errorf("last = %s, want %s", sorted[len(sorted)-1].Src, tt.last)
+			}
+		})
+	}
+}
+
+func TestViewPeerListWithSortArrowOnBytesAndSearch(t *testing.T) {
+	m := testModel()
+	m.width = 160
+	m.height = 24
+	m.mode = viewPeers
+	m.sortField = sortBytes
+	m.searchQuery = "10.1"
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, Proto: "TCP", State: "established", Bytes: 1024},
+		{Src: "10.2.0.1:5678", DstPort: 5432, Proto: "TCP", State: "established", Bytes: 2048},
+	}
+
+	view := m.View()
+	// Sort arrow should be on Rx/Tx column.
+	if !strings.Contains(view, "▲") {
+		t.Error("expected sort arrow on bytes column")
+	}
+	// Search should filter out 10.2.0.1.
+	if strings.Contains(view, "10.2.0.1") {
+		t.Error("search should filter out non-matching peer")
+	}
+	if !strings.Contains(view, "1/2 connections") {
+		t.Error("should show filtered count")
+	}
+}
+
+func TestViewPeerListSplitBytesDisplay(t *testing.T) {
+	m := testModel()
+	m.width = 160
+	m.height = 24
+	m.mode = viewPeers
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, Proto: "TCP", State: "established",
+			RxBytes: 1024, TxBytes: 2048, Bytes: 3072},
+	}
+
+	view := m.View()
+	// When RxBytes > 0 || TxBytes > 0, should show split format "Rx/Tx".
+	if !strings.Contains(view, "1.0 K/2.0 K") {
+		t.Error("should show split bytes display (Rx/Tx) when RxBytes and TxBytes are set")
+	}
+}
+
+func TestViewPeerListCombinedBytesDisplay(t *testing.T) {
+	m := testModel()
+	m.width = 160
+	m.height = 24
+	m.mode = viewPeers
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, Proto: "TCP", State: "established",
+			RxBytes: 0, TxBytes: 0, Bytes: 1536},
+	}
+
+	view := m.View()
+	// When only Bytes > 0 (no split), should show combined value.
+	if !strings.Contains(view, "1.5 K") {
+		t.Error("should show combined bytes display when only Bytes is set")
+	}
+}
+
+func TestClampPodScrollExceedsMax(t *testing.T) {
+	m := testModel() // 3 pods
+	m.width = 80
+	m.height = 24 // podPaneHeight = 24-4 = 20, way more than 3 pods
+	m.podScroll = 10
+	m.cursor = 2
+
+	m.clampPodScroll()
+	if m.podScroll != 0 {
+		t.Errorf("podScroll = %d, want 0 (all pods fit in pane)", m.podScroll)
+	}
+}
+
+func TestClampPodScrollCursorAboveVisible(t *testing.T) {
+	pods := make([]k8s.PodInfo, 20)
+	for i := range pods {
+		pods[i] = k8s.PodInfo{Name: fmt.Sprintf("pod-%d", i), Node: "node-a", IP: fmt.Sprintf("10.0.0.%d", i)}
+	}
+	m := New(Config{Pods: pods, Interval: 10 * time.Second})
+	m.width = 80
+	m.height = 10 // podPaneHeight = 10-4 = 6
+	m.podScroll = 10
+	m.cursor = 5 // cursor above visible area
+
+	m.clampPodScroll()
+	if m.podScroll != 5 {
+		t.Errorf("podScroll = %d, want 5 (scroll to show cursor)", m.podScroll)
+	}
+}
+
+func TestClampScrollExceedsMax(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 12
+	m.mode = viewPeers
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432},
+	}
+	m.scroll = 100 // way past max
+
+	m.clampScroll()
+	if m.scroll != 0 {
+		t.Errorf("scroll = %d, want 0 (clamped to maxScroll=0)", m.scroll)
+	}
+}
+
+func TestClampScrollNotPeerView(t *testing.T) {
+	m := testModel()
+	m.mode = viewPods
+	m.scroll = 50
+
+	m.clampScroll()
+	// Should be a no-op when not in peer view.
+	if m.scroll != 50 {
+		t.Errorf("scroll = %d, want 50 (clampScroll should be no-op for pod view)", m.scroll)
+	}
+}
+
+func TestPeerPaneHeightMinimum(t *testing.T) {
+	m := testModel()
+	m.height = 0 // extremely small
+
+	h := m.peerPaneHeight()
+	if h != 1 {
+		t.Errorf("peerPaneHeight = %d, want 1 (minimum)", h)
+	}
+}
+
+func TestPodPaneHeightMinimum(t *testing.T) {
+	m := testModel()
+	m.height = 0
+
+	h := m.podPaneHeight()
+	if h != 1 {
+		t.Errorf("podPaneHeight = %d, want 1 (minimum)", h)
+	}
+}
+
+func TestSelectedPeersEmptyPods(t *testing.T) {
+	m := New(Config{Pods: []k8s.PodInfo{}, Interval: 10 * time.Second})
+	peers := m.selectedPeers()
+	if peers != nil {
+		t.Errorf("selectedPeers should return nil for empty pods, got %v", peers)
+	}
+}
+
+func TestSelectedPeersCursorOutOfRange(t *testing.T) {
+	m := testModel()
+	m.cursor = 100 // way out of range
+
+	peers := m.selectedPeers()
+	if peers != nil {
+		t.Errorf("selectedPeers should return nil when cursor out of range, got %v", peers)
+	}
+}
+
+func TestErrorSummaryDeduplicate(t *testing.T) {
+	errors := []string{
+		"node-1: connection refused",
+		"node-2: connection refused",
+		"node-3: timeout",
+	}
+	summary := errorSummary(errors)
+	if !strings.Contains(summary, "connection refused (x2)") {
+		t.Errorf("expected deduplication with count, got %q", summary)
+	}
+	if !strings.Contains(summary, "timeout") {
+		t.Errorf("expected timeout in summary, got %q", summary)
+	}
+}
+
+func TestErrorSummaryEmpty(t *testing.T) {
+	summary := errorSummary(nil)
+	if summary != "" {
+		t.Errorf("expected empty string for nil errors, got %q", summary)
+	}
+}
+
+func TestUpdateTickWhileQuitting(t *testing.T) {
+	m := testModel()
+	m.polling = false
+	m.quitting = true
+
+	updated, cmd := m.Update(tickMsg{})
+	m2 := updated.(Model)
+	if cmd != nil {
+		t.Error("tick while quitting should return nil cmd")
+	}
+	// polling should remain false since tick was a no-op.
+	if m2.polling {
+		t.Error("should not start polling while quitting")
+	}
+}
+
+func TestUpdatePauseToggle(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 24
+
+	// Press 'p' to pause.
+	updated, cmd := m.Update(keyMsg("p"))
+	m2 := updated.(Model)
+	if !m2.paused {
+		t.Error("should be paused after 'p'")
+	}
+	if cmd != nil {
+		t.Error("pausing should return nil cmd")
+	}
+
+	// Press space to unpause.
+	updated, cmd = m2.Update(keyMsg(" "))
+	m3 := updated.(Model)
+	if m3.paused {
+		t.Error("should be unpaused after space")
+	}
+	if cmd == nil {
+		t.Error("unpausing should return a poll command")
+	}
+}
+
+func TestUpdateCtrlCQuits(t *testing.T) {
+	m := testModel()
+	updated, cmd := m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyCtrlC}))
+	m2 := updated.(Model)
+	if !m2.quitting {
+		t.Error("ctrl+c should set quitting=true")
+	}
+	if cmd == nil {
+		t.Error("ctrl+c should return quit command")
+	}
+}
+
+func TestSearchEnterConfirms(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 24
+	m.mode = viewPeers
+	m.searching = true
+	m.searchQuery = "10.1"
+
+	updated, _ := m.Update(keyMsg("enter"))
+	m2 := updated.(Model)
+	if m2.searching {
+		t.Error("enter should exit search mode")
+	}
+	if m2.searchQuery != "10.1" {
+		t.Errorf("enter should preserve searchQuery, got %q", m2.searchQuery)
+	}
+}
+
+func TestSearchBackspace(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 24
+	m.mode = viewPeers
+	m.searching = true
+	m.searchQuery = "10.1"
+
+	updated, _ := m.Update(keyMsg("backspace"))
+	m2 := updated.(Model)
+	if m2.searchQuery != "10." {
+		t.Errorf("searchQuery after backspace = %q, want '10.'", m2.searchQuery)
+	}
+
+	// Backspace on empty query should not panic.
+	m2.searchQuery = ""
+	updated, _ = m2.Update(keyMsg("backspace"))
+	m3 := updated.(Model)
+	if m3.searchQuery != "" {
+		t.Errorf("searchQuery after backspace on empty = %q, want empty", m3.searchQuery)
+	}
+}
+
+func TestViewHelpFromPeerView(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 24
+	m.mode = viewPeers
+	m.showHelp = true
+
+	view := m.View()
+	if !strings.Contains(view, "Keybindings") {
+		t.Error("help overlay should show 'Keybindings' when opened from peer view")
+	}
+	if !strings.Contains(view, "close help") {
+		t.Error("help overlay should show 'close help' hint")
+	}
+}
+
+func TestViewQuitting(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 24
+	m.quitting = true
+
+	view := m.View()
+	if view != "" {
+		t.Errorf("View() should return empty string when quitting, got %q", view)
+	}
+}
+
+func TestViewPeerListNoPods(t *testing.T) {
+	m := New(Config{Pods: []k8s.PodInfo{}, Interval: 10 * time.Second})
+	m.width = 80
+	m.height = 24
+	m.mode = viewPeers
+
+	view := m.View()
+	if !strings.Contains(view, "(no pods)") {
+		t.Error("peer view with empty pods should show '(no pods)'")
+	}
+}
+
+func TestViewPeerListCursorOutOfRange(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 24
+	m.mode = viewPeers
+	m.cursor = 100 // out of range
+
+	view := m.View()
+	if !strings.Contains(view, "(no pods)") {
+		t.Error("peer view with cursor out of range should show '(no pods)'")
+	}
+}
+
+func TestViewPeerListSearchBar(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 24
+	m.mode = viewPeers
+	m.searching = true
+	m.searchQuery = "abc"
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432},
+	}
+
+	view := m.View()
+	if !strings.Contains(view, "/abc_") {
+		t.Error("search bar should show '/abc_' when searching")
+	}
+}
+
+func TestViewPeerListScrollInfo(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 12
+	m.mode = viewPeers
+	var peers []cilium.Peer
+	for i := 0; i < 30; i++ {
+		peers = append(peers, cilium.Peer{
+			Src:     fmt.Sprintf("10.1.0.%d:%d", i, 1000+i),
+			DstPort: 5432,
+		})
+	}
+	m.peers["pod-1"] = peers
+	m.scroll = 5
+
+	view := m.View()
+	// Should show scroll position indicator [N/M].
+	if !strings.Contains(view, "[6/") {
+		t.Error("peer view should show scroll position [6/...]")
+	}
+}
+
+func TestPollResultCursorClampedWhenExceedsPods(t *testing.T) {
+	m := testModel()
+	m.cursor = 10 // exceeds number of pods (3)
+
+	updated, _ := m.Update(pollResultMsg{
+		peers:     map[string][]cilium.Peer{},
+		timestamp: time.Now(),
+	})
+	m2 := updated.(Model)
+	if m2.cursor != 2 {
+		t.Errorf("cursor = %d after poll result, want 2 (len(pods)-1)", m2.cursor)
+	}
+}
+
+func TestPeerViewPeerStatePending(t *testing.T) {
+	m := testModel()
+	m.width = 120
+	m.height = 24
+	m.mode = viewPeers
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, Proto: "TCP", State: "unknown"},
+	}
+
+	view := m.View()
+	// Non-established/non-closing states should render without special style.
+	if !strings.Contains(view, "unknown") {
+		t.Error("should show non-standard state value")
+	}
+}
+
+func TestGOnEmptyPodList(t *testing.T) {
+	m := New(Config{Pods: []k8s.PodInfo{}, Interval: 10 * time.Second})
+	m.width = 80
+	m.height = 24
+
+	// G on empty pod list should not panic.
+	updated, _ := m.Update(keyMsg("G"))
+	m2 := updated.(Model)
+	if m2.cursor != 0 {
+		t.Errorf("cursor = %d, want 0 on empty pod list", m2.cursor)
+	}
+}
+
+func TestPeerViewGGPausesBehavior(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 12
+	m.mode = viewPeers
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432},
+	}
+	m.scroll = 5
+
+	// gg should pause and reset scroll.
+	updated, _ := m.Update(keyMsg("g"))
+	m2 := updated.(Model)
+	updated, _ = m2.Update(keyMsg("g"))
+	m3 := updated.(Model)
+	if !m3.paused {
+		t.Error("gg in peer view should pause")
+	}
+	if m3.scroll != 0 {
+		t.Errorf("gg scroll = %d, want 0", m3.scroll)
+	}
+}
+
+func TestPeerViewGPausesBehavior(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 12
+	m.mode = viewPeers
+	var peers []cilium.Peer
+	for i := 0; i < 30; i++ {
+		peers = append(peers, cilium.Peer{
+			Src:     fmt.Sprintf("10.1.0.%d:%d", i, 1000+i),
+			DstPort: 5432,
+		})
+	}
+	m.peers["pod-1"] = peers
+
+	updated, _ := m.Update(keyMsg("G"))
+	m2 := updated.(Model)
+	if !m2.paused {
+		t.Error("G in peer view should pause")
+	}
+}
