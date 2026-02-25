@@ -1438,6 +1438,19 @@ func TestPodListShowsTotalBytes(t *testing.T) {
 	}
 }
 
+func TestHeaderShowsKubeContext(t *testing.T) {
+	m := testModel()
+	m.config.Context = "prod-us-east"
+	m.width = 120
+	m.height = 24
+	m.timestamp = time.Now()
+
+	view := m.View()
+	if !strings.Contains(view, "prod-us-east") {
+		t.Error("Header should show kube context name")
+	}
+}
+
 func TestHeaderShowsTotalBytes(t *testing.T) {
 	m := testModel()
 	m.width = 120

@@ -47,6 +47,7 @@ type pendingKeyTimeoutMsg struct{}
 type Config struct {
 	Filter      cilium.Filter
 	Namespace   string
+	Context     string // kubeconfig context name
 	Target      k8s.Target
 	Interval    time.Duration
 	PollTimeout time.Duration // 0 = no timeout
@@ -716,10 +717,14 @@ func (m Model) renderHeader(b *strings.Builder, w int) {
 
 	target := fmt.Sprintf("%s/%s/%s", m.config.Namespace, m.config.Target.Kind, m.config.Target.Name)
 	filterLabel := m.config.Filter.FilterSummary()
+	ctxLabel := ""
+	if m.config.Context != "" {
+		ctxLabel = "  " + m.config.Context
+	}
 	var headerText string
 	if m.timestamp.IsZero() {
-		headerText = fmt.Sprintf("  ◎ ocellus  %s  %s   %d pods   loading…",
-			target, filterLabel, len(m.config.Pods))
+		headerText = fmt.Sprintf("  ◎ ocellus%s  %s  %s   %d pods   loading…",
+			ctxLabel, target, filterLabel, len(m.config.Pods))
 	} else {
 		bytesStr := ""
 		if totalBytes > 0 {
@@ -728,8 +733,8 @@ func (m Model) renderHeader(b *strings.Builder, w int) {
 		if m.bytesPerSec > 0 {
 			bytesStr += fmt.Sprintf("   %s/s", format.Bytes(m.bytesPerSec))
 		}
-		headerText = fmt.Sprintf("  ◎ ocellus  %s  %s   %d/%d active   %d connections%s   %s",
-			target, filterLabel, active, len(m.config.Pods), totalConns, bytesStr, ts)
+		headerText = fmt.Sprintf("  ◎ ocellus%s  %s  %s   %d/%d active   %d connections%s   %s",
+			ctxLabel, target, filterLabel, active, len(m.config.Pods), totalConns, bytesStr, ts)
 	}
 	b.WriteString(headerStyle.Width(w).Render(headerText))
 	b.WriteString("\n")

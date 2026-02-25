@@ -20,6 +20,7 @@ import (
 type Client struct {
 	clientset  kubernetes.Interface
 	restConfig *rest.Config
+	context    string
 }
 
 func NewClient(kubeconfig string) (*Client, error) {
@@ -28,9 +29,11 @@ func NewClient(kubeconfig string) (*Client, error) {
 		rules.ExplicitPath = kubeconfig
 	}
 
-	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+	clientConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 		rules, &clientcmd.ConfigOverrides{},
-	).ClientConfig()
+	)
+
+	config, err := clientConfig.ClientConfig()
 	if err != nil {
 		return nil, fmt.Errorf("load kubeconfig: %w", err)
 	}
@@ -38,12 +41,22 @@ func NewClient(kubeconfig string) (*Client, error) {
 	config.QPS = 50
 	config.Burst = 100
 
+	rawConfig, err := clientConfig.RawConfig()
+	if err != nil {
+		return nil, fmt.Errorf("load raw kubeconfig: %w", err)
+	}
+
 	cs, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return nil, fmt.Errorf("create kubernetes client: %w", err)
 	}
 
-	return &Client{clientset: cs, restConfig: config}, nil
+	return &Client{clientset: cs, restConfig: config, context: rawConfig.CurrentContext}, nil
+}
+
+// Context returns the current kubeconfig context name.
+func (c *Client) Context() string {
+	return c.context
 }
 
 func (c *Client) ListPods(ctx context.Context, namespace string, opts metav1.ListOptions) (*corev1.PodList, error) {

@@ -87,6 +87,7 @@ func main() {
 	m := tui.New(tui.Config{
 		Filter:      filter,
 		Namespace:   *namespace,
+		Context:     client.Context(),
 		Target:      target,
 		Interval:    time.Duration(*interval) * time.Second,
 		PollTimeout: time.Duration(*timeout) * time.Second,
