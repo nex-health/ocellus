@@ -2,6 +2,7 @@ package cilium
 
 import (
 	"context"
+	"sync"
 )
 
 // ConntrackSource abstracts how conntrack data is retrieved from a node.
@@ -27,6 +28,7 @@ func (s *TextSource) QueryPeers(ctx context.Context, client PodExecer, ciliumPod
 // AutoSource tries JSON first, falls back to text.
 // Once a method succeeds, it remembers the choice for subsequent calls.
 type AutoSource struct {
+	mu        sync.Mutex
 	preferred string // "json", "text", or "" (unknown)
 }
 
@@ -35,7 +37,11 @@ func NewAutoSource() *AutoSource {
 }
 
 func (s *AutoSource) QueryPeers(ctx context.Context, client PodExecer, ciliumPod string, podIPs []string, filter Filter) (map[string][]Peer, error) {
-	if s.preferred == "text" {
+	s.mu.Lock()
+	pref := s.preferred
+	s.mu.Unlock()
+
+	if pref == "text" {
 		return (&TextSource{}).QueryPeers(ctx, client, ciliumPod, podIPs, filter)
 	}
 
@@ -50,7 +56,9 @@ func (s *AutoSource) QueryPeers(ctx context.Context, client PodExecer, ciliumPod
 			total += len(peers)
 		}
 		if total > 0 {
+			s.mu.Lock()
 			s.preferred = "json"
+			s.mu.Unlock()
 			return results, nil
 		}
 	}
@@ -58,7 +66,9 @@ func (s *AutoSource) QueryPeers(ctx context.Context, client PodExecer, ciliumPod
 	// Fall back to text.
 	results, err = (&TextSource{}).QueryPeers(ctx, client, ciliumPod, podIPs, filter)
 	if err == nil {
+		s.mu.Lock()
 		s.preferred = "text"
+		s.mu.Unlock()
 	}
 	return results, err
 }

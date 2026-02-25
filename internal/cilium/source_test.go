@@ -3,6 +3,7 @@ package cilium
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 )
 
@@ -136,4 +137,27 @@ func TestAutoSourceRemembersPreference(t *testing.T) {
 	if callCount != 3 {
 		t.Errorf("second call: expected 3 total exec calls, got %d", callCount)
 	}
+}
+
+func TestAutoSourceConcurrentAccess(t *testing.T) {
+	client := &mockPodExecer{
+		execFn: func(_, _, _ string, cmd []string) (string, error) {
+			for _, arg := range cmd {
+				if arg == "json" {
+					return "", fmt.Errorf("no json")
+				}
+			}
+			return sampleCTOutput, nil
+		},
+	}
+	src := NewAutoSource()
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = src.QueryPeers(context.Background(), client, "cilium-abc", []string{"10.4.34.6"}, Filter{PortMin: 4143, PortMax: 4143})
+		}()
+	}
+	wg.Wait()
 }
