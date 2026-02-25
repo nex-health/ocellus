@@ -50,6 +50,10 @@ func decodeIPv4(b64 string) (net.IP, error) {
 	return net.IPv4(data[0], data[1], data[2], data[3]), nil
 }
 
+// ntohs converts a network byte order (big-endian) port to host byte order.
+// This assumes a little-endian host, which is true for all supported Go
+// platforms (amd64, arm64). On a hypothetical big-endian host this would
+// produce incorrect results.
 func ntohs(port uint16) uint16 {
 	buf := make([]byte, 2)
 	binary.LittleEndian.PutUint16(buf, port)

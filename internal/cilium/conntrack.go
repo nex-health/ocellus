@@ -179,6 +179,9 @@ func (f Filter) effectiveStates() []string {
 }
 
 // parseKVUint extracts a uint64 value for a key like "Bytes=452" from the line.
+// Returns 0 if the key is not found or the value cannot be parsed. This is
+// intentional: missing or malformed fields default to zero rather than causing
+// parse failures, since different Cilium versions emit different field sets.
 func parseKVUint(line, key string) uint64 {
 	prefix := key + "="
 	idx := strings.Index(line, prefix)
