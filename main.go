@@ -91,6 +91,7 @@ func main() {
 		Interval:    time.Duration(*interval) * time.Second,
 		PollTimeout: time.Duration(*timeout) * time.Second,
 		Client:      client,
+		Source:      cilium.NewAutoSource(),
 		Pods:        pods,
 	})
 

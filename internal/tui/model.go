@@ -51,6 +51,7 @@ type Config struct {
 	Interval    time.Duration
 	PollTimeout time.Duration // 0 = no timeout
 	Client      ClusterClient
+	Source      cilium.ConntrackSource
 	Pods        []k8s.PodInfo
 }
 
@@ -74,8 +75,10 @@ type Model struct {
 	searching   bool
 	searchQuery string
 	showHelp   bool
-	lastErrors []string
-	pendingKey string // for multi-key chords like "gg"
+	lastErrors     []string
+	pendingKey     string // for multi-key chords like "gg"
+	prevTotalBytes uint64
+	bytesPerSec    uint64
 }
 
 // New creates a new Model from the given config.
@@ -121,7 +124,7 @@ func (m Model) startPoll() tea.Cmd {
 	for k, v := range m.exited {
 		exitedCopy[k] = v
 	}
-	return pollCmd(m.config.Client, m.config.Namespace, m.config.Target, m.config.Filter, m.pollTargets(), exitedCopy, m.config.PollTimeout)
+	return pollCmd(m.config.Client, m.config.Source, m.config.Namespace, m.config.Target, m.config.Filter, m.pollTargets(), exitedCopy, m.config.PollTimeout)
 }
 
 // pollTargets returns the pods to poll based on the current view mode.
@@ -154,7 +157,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case pollResultMsg:
 		m.polling = false
-		m.timestamp = msg.timestamp
 		m.lastErrors = msg.errors
 		for name, p := range msg.peers {
 			m.peers[name] = p
@@ -162,6 +164,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for name := range msg.exited {
 			m.exited[name] = true
 		}
+
+		// Compute total bytes across all pods.
+		var currentTotalBytes uint64
+		for _, p := range m.config.Pods {
+			for _, peer := range m.peers[p.Name] {
+				currentTotalBytes += peer.Bytes
+			}
+		}
+
+		// Calculate rate.
+		if m.prevTotalBytes > 0 && !m.timestamp.IsZero() {
+			elapsed := msg.timestamp.Sub(m.timestamp).Seconds()
+			if elapsed > 0 && currentTotalBytes > m.prevTotalBytes {
+				m.bytesPerSec = uint64(float64(currentTotalBytes-m.prevTotalBytes) / elapsed)
+			} else {
+				m.bytesPerSec = 0
+			}
+		}
+		m.prevTotalBytes = currentTotalBytes
+		m.timestamp = msg.timestamp
 		if len(m.config.Pods) == 0 {
 			m.cursor = 0
 		} else if m.cursor >= len(m.config.Pods) {
@@ -702,6 +724,9 @@ func (m Model) renderHeader(b *strings.Builder, w int) {
 		bytesStr := ""
 		if totalBytes > 0 {
 			bytesStr = "   " + format.Bytes(totalBytes)
+		}
+		if m.bytesPerSec > 0 {
+			bytesStr += fmt.Sprintf("   %s/s", format.Bytes(m.bytesPerSec))
 		}
 		headerText = fmt.Sprintf("  ◎ ocellus  %s  %s   %d/%d active   %d connections%s   %s",
 			target, filterLabel, active, len(m.config.Pods), totalConns, bytesStr, ts)

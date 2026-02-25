@@ -17,7 +17,10 @@ type ClusterClient interface {
 	Exec(ctx context.Context, namespace, pod, container string, cmd []string) (string, error)
 }
 
-func pollCmd(client ClusterClient, namespace string, target k8s.Target, filter cilium.Filter, pods []k8s.PodInfo, exited map[string]bool, timeout time.Duration) tea.Cmd {
+func pollCmd(client ClusterClient, source cilium.ConntrackSource, namespace string, target k8s.Target, filter cilium.Filter, pods []k8s.PodInfo, exited map[string]bool, timeout time.Duration) tea.Cmd {
+	if source == nil {
+		source = &cilium.TextSource{}
+	}
 	return func() tea.Msg {
 		ctx := context.Background()
 
@@ -55,16 +58,22 @@ func pollCmd(client ClusterClient, namespace string, target k8s.Target, filter c
 					addError(fmt.Sprintf("node %s: %v", node, err))
 					return
 				}
-				ctOutput, err := cilium.QueryNode(nodeCtx, client, agentName)
+				podIPs := make([]string, len(nodePods))
+				for i, p := range nodePods {
+					podIPs[i] = p.IP
+				}
+				results, err := source.QueryPeers(nodeCtx, client, agentName, podIPs, filter)
 				if err != nil {
 					addError(fmt.Sprintf("node %s: %v", node, err))
 					return
 				}
+				// Map IP-keyed results back to pod-name-keyed results.
 				mu.Lock()
 				defer mu.Unlock()
 				for _, p := range nodePods {
-					peers := cilium.ParseCTOutput(ctOutput, p.IP, filter)
-					peerResults[p.Name] = peers
+					if peers, ok := results[p.IP]; ok {
+						peerResults[p.Name] = peers
+					}
 				}
 			}(node, nodePods)
 		}
