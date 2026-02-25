@@ -2601,3 +2601,241 @@ func TestProtoFilterStringMethods(t *testing.T) {
 		}
 	}
 }
+
+func TestDirFilterCycling(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 24
+	m.mode = viewPeers
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, Direction: "in"},
+	}
+
+	if m.dirFilter != dirAll {
+		t.Errorf("initial dirFilter = %d, want dirAll", m.dirFilter)
+	}
+
+	// D -> IN
+	updated, _ := m.Update(keyMsg("D"))
+	m2 := updated.(Model)
+	if m2.dirFilter != dirIn {
+		t.Errorf("dirFilter after D = %d, want dirIn", m2.dirFilter)
+	}
+
+	// D -> OUT
+	updated, _ = m2.Update(keyMsg("D"))
+	m3 := updated.(Model)
+	if m3.dirFilter != dirOut {
+		t.Errorf("dirFilter after 2nd D = %d, want dirOut", m3.dirFilter)
+	}
+
+	// D -> all (wrap)
+	updated, _ = m3.Update(keyMsg("D"))
+	m4 := updated.(Model)
+	if m4.dirFilter != dirAll {
+		t.Errorf("dirFilter after 3rd D = %d, want dirAll", m4.dirFilter)
+	}
+}
+
+func TestDirFilterResetsScroll(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 12
+	m.mode = viewPeers
+	m.scroll = 5
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, Direction: "in"},
+	}
+
+	updated, _ := m.Update(keyMsg("D"))
+	m2 := updated.(Model)
+	if m2.scroll != 0 {
+		t.Errorf("scroll = %d after D, want 0", m2.scroll)
+	}
+}
+
+func TestDirFilterExcludesNonMatching(t *testing.T) {
+	m := testModel()
+	m.dirFilter = dirIn
+	peers := []cilium.Peer{
+		{Src: "10.1.0.1:1000", DstPort: 5432, Direction: "in"},
+		{Src: "10.1.0.2:2000", DstPort: 5432, Direction: "out"},
+		{Src: "10.1.0.3:3000", DstPort: 5432, Direction: "in"},
+	}
+
+	filtered := m.filteredPeers(peers)
+	if len(filtered) != 2 {
+		t.Errorf("filtered peers = %d, want 2 (IN only)", len(filtered))
+	}
+	for _, p := range filtered {
+		if p.Direction != "in" {
+			t.Errorf("unexpected direction %q in filtered results", p.Direction)
+		}
+	}
+}
+
+func TestDirFilterResetOnEsc(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 24
+	m.mode = viewPeers
+	m.dirFilter = dirIn
+
+	updated, _ := m.Update(keyMsg("esc"))
+	m2 := updated.(Model)
+	if m2.dirFilter != dirAll {
+		t.Errorf("dirFilter after esc = %d, want dirAll", m2.dirFilter)
+	}
+}
+
+func TestDirFilterBadgeShown(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.Ascii)
+	m := testModel()
+	m.width = 120
+	m.height = 24
+	m.mode = viewPeers
+	m.dirFilter = dirIn
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, Direction: "in"},
+	}
+
+	view := m.View()
+	if !strings.Contains(view, "[dir:IN]") {
+		t.Error("peer view should show [dir:IN] badge when direction filter is active")
+	}
+}
+
+func TestDirFilterStringMethods(t *testing.T) {
+	tests := []struct {
+		filter dirFilter
+		want   string
+	}{
+		{dirAll, "all"},
+		{dirIn, "IN"},
+		{dirOut, "OUT"},
+	}
+	for _, tt := range tests {
+		if got := tt.filter.String(); got != tt.want {
+			t.Errorf("dirFilter(%d).String() = %q, want %q", tt.filter, got, tt.want)
+		}
+	}
+}
+
+func TestIPVerFilterCycling(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 24
+	m.mode = viewPeers
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, IPVersion: "4"},
+	}
+
+	// Default is all.
+	if m.ipVerFilter != ipVerAll {
+		t.Errorf("default ipVerFilter = %d, want ipVerAll", m.ipVerFilter)
+	}
+
+	// Press V to cycle: all → v4.
+	updated, _ := m.Update(keyMsg("V"))
+	m2 := updated.(Model)
+	if m2.ipVerFilter != ipVer4 {
+		t.Errorf("after V: ipVerFilter = %d, want ipVer4", m2.ipVerFilter)
+	}
+
+	// Press V again: v4 → v6.
+	updated, _ = m2.Update(keyMsg("V"))
+	m3 := updated.(Model)
+	if m3.ipVerFilter != ipVer6 {
+		t.Errorf("after VV: ipVerFilter = %d, want ipVer6", m3.ipVerFilter)
+	}
+
+	// Press V again: v6 → all.
+	updated, _ = m3.Update(keyMsg("V"))
+	m4 := updated.(Model)
+	if m4.ipVerFilter != ipVerAll {
+		t.Errorf("after VVV: ipVerFilter = %d, want ipVerAll", m4.ipVerFilter)
+	}
+}
+
+func TestIPVerFilterExcludes(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 24
+	m.mode = viewPeers
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, IPVersion: "4"},
+		{Src: "[f00d::1]:5678", DstPort: 5432, IPVersion: "6"},
+	}
+
+	// All: both peers visible.
+	all := m.filteredPeers(m.peers["pod-1"])
+	if len(all) != 2 {
+		t.Fatalf("all filter: expected 2, got %d", len(all))
+	}
+
+	// v4 only: only IPv4 peer.
+	m.ipVerFilter = ipVer4
+	v4 := m.filteredPeers(m.peers["pod-1"])
+	if len(v4) != 1 {
+		t.Fatalf("v4 filter: expected 1, got %d", len(v4))
+	}
+	if v4[0].IPVersion != "4" {
+		t.Errorf("v4 filter returned v6 peer: %s", v4[0].Src)
+	}
+
+	// v6 only: only IPv6 peer.
+	m.ipVerFilter = ipVer6
+	v6 := m.filteredPeers(m.peers["pod-1"])
+	if len(v6) != 1 {
+		t.Fatalf("v6 filter: expected 1, got %d", len(v6))
+	}
+	if v6[0].IPVersion != "6" {
+		t.Errorf("v6 filter returned v4 peer: %s", v6[0].Src)
+	}
+}
+
+func TestIPVerFilterResetOnEsc(t *testing.T) {
+	m := testModel()
+	m.width = 80
+	m.height = 24
+	m.mode = viewPeers
+	m.ipVerFilter = ipVer4
+
+	updated, _ := m.Update(keyMsg("esc"))
+	m2 := updated.(Model)
+	if m2.ipVerFilter != ipVerAll {
+		t.Errorf("ipVerFilter should reset to all on Esc, got %d", m2.ipVerFilter)
+	}
+}
+
+func TestIPVerFilterBadgeInSubheader(t *testing.T) {
+	m := testModel()
+	m.width = 120
+	m.height = 24
+	m.mode = viewPeers
+	m.ipVerFilter = ipVer4
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, IPVersion: "4"},
+	}
+
+	view := m.View()
+	if !strings.Contains(view, "[ip:v4]") {
+		t.Error("peer view should show [ip:v4] badge when filter is active")
+	}
+}
+
+func TestIPVerFilterString(t *testing.T) {
+	tests := []struct {
+		filter ipVerFilter
+		want   string
+	}{
+		{ipVerAll, "all"},
+		{ipVer4, "v4"},
+		{ipVer6, "v6"},
+	}
+	for _, tt := range tests {
+		if got := tt.filter.String(); got != tt.want {
+			t.Errorf("ipVerFilter(%d).String() = %q, want %q", tt.filter, got, tt.want)
+		}
+	}
+}

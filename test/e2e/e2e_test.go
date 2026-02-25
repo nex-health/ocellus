@@ -156,8 +156,53 @@ func TestTextSourceQueryPeersReal(t *testing.T) {
 		if p.DstPort != 80 {
 			t.Errorf("expected DstPort 80, got %d", p.DstPort)
 		}
+		if p.Direction != "in" {
+			t.Errorf("expected Direction in, got %q", p.Direction)
+		}
 	}
 	t.Logf("found %d peers for pod %s on port 80", len(peers), pod.IP)
+}
+
+func TestDirectionFilterReal(t *testing.T) {
+	client := newRealClient(t)
+	pod := requireNginxPod(t, client)
+	agent := requireCiliumAgent(t, client, pod.Node)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// OUT direction — the nginx pod's outbound connections (e.g. DNS).
+	outFilter, err := cilium.NewFilter(cilium.FilterOpts{Direction: "out", State: "all"})
+	if err != nil {
+		t.Fatalf("NewFilter (out): %v", err)
+	}
+	src := &cilium.TextSource{}
+	results, err := src.QueryPeers(ctx, client, agent, []string{pod.IP}, outFilter)
+	if err != nil {
+		t.Fatalf("QueryPeers (out): %v", err)
+	}
+	for _, p := range results[pod.IP] {
+		if p.Direction != "out" {
+			t.Errorf("expected Direction out, got %q for %s", p.Direction, p.Src)
+		}
+	}
+	t.Logf("found %d OUT peers for pod %s", len(results[pod.IP]), pod.IP)
+
+	// ALL direction — should include both IN and OUT.
+	allFilter, err := cilium.NewFilter(cilium.FilterOpts{Port: "80", Direction: "all", State: "all"})
+	if err != nil {
+		t.Fatalf("NewFilter (all): %v", err)
+	}
+	results, err = src.QueryPeers(ctx, client, agent, []string{pod.IP}, allFilter)
+	if err != nil {
+		t.Fatalf("QueryPeers (all): %v", err)
+	}
+	for _, p := range results[pod.IP] {
+		if p.Direction != "in" && p.Direction != "out" {
+			t.Errorf("unexpected Direction %q for %s", p.Direction, p.Src)
+		}
+	}
+	t.Logf("found %d peers (all directions, port 80) for pod %s", len(results[pod.IP]), pod.IP)
 }
 
 func TestAutoSourceDetectionReal(t *testing.T) {
@@ -326,6 +371,83 @@ func TestFullPipelineEndToEnd(t *testing.T) {
 		if p.DstPort != 80 {
 			t.Errorf("expected DstPort 80, got %d", p.DstPort)
 		}
+		if p.Direction == "" {
+			t.Error("peer has empty Direction")
+		}
 	}
 	t.Logf("full pipeline: %d peers, first: %+v", len(peers), peers[0])
+}
+
+func TestPeersHaveIPVersion(t *testing.T) {
+	client := newRealClient(t)
+	pod := requireNginxPod(t, client)
+	agent := requireCiliumAgent(t, client, pod.Node)
+
+	filter, err := cilium.NewFilter(cilium.FilterOpts{Port: "80", State: "all"})
+	if err != nil {
+		t.Fatalf("NewFilter: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	src := cilium.NewAutoSource()
+	results, err := src.QueryPeers(ctx, client, agent, []string{pod.IP}, filter)
+	if err != nil {
+		t.Fatalf("QueryPeers: %v", err)
+	}
+
+	peers := results[pod.IP]
+	if len(peers) == 0 {
+		t.Fatal("expected at least 1 peer")
+	}
+
+	for _, p := range peers {
+		if p.IPVersion != "4" && p.IPVersion != "6" {
+			t.Errorf("peer %s has invalid IPVersion %q, want 4 or 6", p.Src, p.IPVersion)
+		}
+	}
+	t.Logf("all %d peers have valid IPVersion field", len(peers))
+}
+
+func TestIPVersionFilterReal(t *testing.T) {
+	client := newRealClient(t)
+	pod := requireNginxPod(t, client)
+	agent := requireCiliumAgent(t, client, pod.Node)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Filter to IPv4 only.
+	v4Filter, err := cilium.NewFilter(cilium.FilterOpts{Port: "80", State: "all", IPVersion: "4"})
+	if err != nil {
+		t.Fatalf("NewFilter (v4): %v", err)
+	}
+	src := cilium.NewAutoSource()
+	v4Results, err := src.QueryPeers(ctx, client, agent, []string{pod.IP}, v4Filter)
+	if err != nil {
+		t.Fatalf("QueryPeers (v4): %v", err)
+	}
+	for _, p := range v4Results[pod.IP] {
+		if p.IPVersion != "4" {
+			t.Errorf("v4 filter returned peer with IPVersion=%q: %s", p.IPVersion, p.Src)
+		}
+	}
+	t.Logf("v4 filter: %d peers", len(v4Results[pod.IP]))
+
+	// Filter to IPv6 only.
+	v6Filter, err := cilium.NewFilter(cilium.FilterOpts{Port: "80", State: "all", IPVersion: "6"})
+	if err != nil {
+		t.Fatalf("NewFilter (v6): %v", err)
+	}
+	v6Results, err := src.QueryPeers(ctx, client, agent, []string{pod.IP}, v6Filter)
+	if err != nil {
+		t.Fatalf("QueryPeers (v6): %v", err)
+	}
+	for _, p := range v6Results[pod.IP] {
+		if p.IPVersion != "6" {
+			t.Errorf("v6 filter returned peer with IPVersion=%q: %s", p.IPVersion, p.Src)
+		}
+	}
+	t.Logf("v6 filter: %d peers", len(v6Results[pod.IP]))
 }

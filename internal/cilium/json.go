@@ -18,6 +18,16 @@ type ctMapRecord struct {
 
 type ctKey struct {
 	TupleKey4 *tupleKey4 `json:"TupleKey4,omitempty"`
+	TupleKey6 *tupleKey6 `json:"TupleKey6,omitempty"`
+}
+
+type tupleKey6 struct {
+	DestAddr   string `json:"DestAddr"`   // base64-encoded 16-byte IPv6
+	SourceAddr string `json:"SourceAddr"` // base64-encoded 16-byte IPv6
+	DestPort   uint16 `json:"DestPort"`
+	SourcePort uint16 `json:"SourcePort"`
+	NextHeader uint8  `json:"NextHeader"`
+	Flags      uint8  `json:"Flags"`
 }
 
 type tupleKey4 struct {
@@ -51,6 +61,16 @@ func decodeIPv4(b64 string) (net.IP, error) {
 	return net.IPv4(data[0], data[1], data[2], data[3]), nil
 }
 
+func decodeIPv6(b64 string) (net.IP, error) {
+	data, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil || len(data) != 16 {
+		return nil, fmt.Errorf("invalid IPv6: %s", b64)
+	}
+	ip := make(net.IP, 16)
+	copy(ip, data)
+	return ip, nil
+}
+
 // ntohs converts a network byte order (big-endian) port to host byte order.
 // This assumes a little-endian host, which is true for all supported Go
 // platforms (amd64, arm64). On a hypothetical big-endian host this would
@@ -61,9 +81,113 @@ func ntohs(port uint16) uint16 {
 	return binary.BigEndian.Uint16(buf)
 }
 
+// parsedKey holds the extracted fields from either a TupleKey4 or TupleKey6.
+type parsedKey struct {
+	isIn       bool
+	proto      string
+	podIP      net.IP
+	peerIP     net.IP
+	dstPort    int // ntohs(DestPort)
+	peerPort   int
+	ipVersion  string // "4" or "6"
+}
+
+// parseKey4 extracts fields from a TupleKey4 entry.
+func parseKey4(k *tupleKey4) (*parsedKey, error) {
+	isIn := k.Flags&0x01 != 0
+
+	var proto string
+	switch k.NextHeader {
+	case 6:
+		proto = "TCP"
+	case 17:
+		proto = "UDP"
+	default:
+		return nil, fmt.Errorf("unsupported protocol %d", k.NextHeader)
+	}
+
+	var podIPField, peerIPField string
+	var peerPortField uint16
+	if isIn {
+		podIPField = k.DestAddr
+		peerIPField = k.SourceAddr
+		peerPortField = k.SourcePort
+	} else {
+		podIPField = k.SourceAddr
+		peerIPField = k.DestAddr
+		peerPortField = k.DestPort
+	}
+
+	podIPDecoded, err := decodeIPv4(podIPField)
+	if err != nil {
+		return nil, err
+	}
+
+	peerIP, err := decodeIPv4(peerIPField)
+	if err != nil {
+		return nil, err
+	}
+
+	return &parsedKey{
+		isIn:      isIn,
+		proto:     proto,
+		podIP:     podIPDecoded,
+		peerIP:    peerIP,
+		dstPort:   int(ntohs(k.DestPort)),
+		peerPort:  int(ntohs(peerPortField)),
+		ipVersion: "4",
+	}, nil
+}
+
+// parseKey6 extracts fields from a TupleKey6 entry.
+func parseKey6(k *tupleKey6) (*parsedKey, error) {
+	isIn := k.Flags&0x01 != 0
+
+	var proto string
+	switch k.NextHeader {
+	case 6:
+		proto = "TCP"
+	case 17:
+		proto = "UDP"
+	default:
+		return nil, fmt.Errorf("unsupported protocol %d", k.NextHeader)
+	}
+
+	var podIPField, peerIPField string
+	var peerPortField uint16
+	if isIn {
+		podIPField = k.DestAddr
+		peerIPField = k.SourceAddr
+		peerPortField = k.SourcePort
+	} else {
+		podIPField = k.SourceAddr
+		peerIPField = k.DestAddr
+		peerPortField = k.DestPort
+	}
+
+	podIPDecoded, err := decodeIPv6(podIPField)
+	if err != nil {
+		return nil, err
+	}
+
+	peerIP, err := decodeIPv6(peerIPField)
+	if err != nil {
+		return nil, err
+	}
+
+	return &parsedKey{
+		isIn:      isIn,
+		proto:     proto,
+		podIP:     podIPDecoded,
+		peerIP:    peerIP,
+		dstPort:   int(ntohs(k.DestPort)),
+		peerPort:  int(ntohs(peerPortField)),
+		ipVersion: "6",
+	}, nil
+}
+
 // ParseJSONCTOutput parses the JSON output of "cilium bpf ct list global -o json"
-// and returns unique peers with active IN connections to the given podIP matching
-// the filter.
+// and returns unique peers matching the filter for the given podIP.
 func ParseJSONCTOutput(data string, podIP string, filter Filter) ([]Peer, error) {
 	var records []ctMapRecord
 	if err := json.Unmarshal([]byte(data), &records); err != nil {
@@ -71,6 +195,30 @@ func ParseJSONCTOutput(data string, podIP string, filter Filter) ([]Peer, error)
 	}
 
 	protos := filter.effectiveProtos()
+	directions := filter.effectiveDirections()
+	ipVersions := filter.effectiveIPVersions()
+
+	dirIn := false
+	dirOut := false
+	for _, d := range directions {
+		switch d {
+		case "in":
+			dirIn = true
+		case "out":
+			dirOut = true
+		}
+	}
+
+	wantV4, wantV6 := false, false
+	for _, v := range ipVersions {
+		switch v {
+		case "4":
+			wantV4 = true
+		case "6":
+			wantV6 = true
+		}
+	}
+
 	states := filter.effectiveStates()
 	stateAll := false
 	stateClosing := false
@@ -90,40 +238,43 @@ func ParseJSONCTOutput(data string, podIP string, filter Filter) ([]Peer, error)
 	var peers []Peer
 
 	for _, rec := range records {
-		k := rec.Key.TupleKey4
-		if k == nil {
-			continue
-		}
-
-		// TUPLE_F_IN (bit 0) means IN direction in Cilium's CT map.
-		// Other bits may be set (e.g. TUPLE_F_SERVICE=4), so check the bit.
-		if k.Flags&0x01 == 0 {
-			continue
-		}
-
-		var proto string
-		switch k.NextHeader {
-		case 6:
-			proto = "TCP"
-		case 17:
-			proto = "UDP"
+		var pk *parsedKey
+		var err error
+		switch {
+		case rec.Key.TupleKey4 != nil:
+			if !wantV4 {
+				continue
+			}
+			pk, err = parseKey4(rec.Key.TupleKey4)
+		case rec.Key.TupleKey6 != nil:
+			if !wantV6 {
+				continue
+			}
+			pk, err = parseKey6(rec.Key.TupleKey6)
 		default:
 			continue
 		}
-		matchedProto := slices.Contains(protos, proto)
-		if !matchedProto {
-			continue
-		}
-
-		dstIP, err := decodeIPv4(k.DestAddr)
 		if err != nil {
 			continue
 		}
-		if dstIP.String() != podIP {
+
+		// Direction filter.
+		if pk.isIn && !dirIn {
+			continue
+		}
+		if !pk.isIn && !dirOut {
 			continue
 		}
 
-		dstPort := int(ntohs(k.DestPort))
+		if !slices.Contains(protos, pk.proto) {
+			continue
+		}
+
+		if pk.podIP.String() != podIP {
+			continue
+		}
+
+		// Port filter.
 		if filter.PortMin > 0 || filter.PortMax > 0 {
 			lo := filter.PortMin
 			hi := filter.PortMax
@@ -133,16 +284,12 @@ func ParseJSONCTOutput(data string, podIP string, filter Filter) ([]Peer, error)
 			if hi == 0 {
 				hi = 65535
 			}
-			if dstPort < lo || dstPort > hi {
+			if pk.dstPort < lo || pk.dstPort > hi {
 				continue
 			}
 		}
 
-		srcIP, err := decodeIPv4(k.SourceAddr)
-		if err != nil {
-			continue
-		}
-		if filter.SrcCIDR != nil && !filter.SrcCIDR.Contains(srcIP) {
+		if filter.SrcCIDR != nil && !filter.SrcCIDR.Contains(pk.peerIP) {
 			continue
 		}
 
@@ -160,12 +307,22 @@ func ParseJSONCTOutput(data string, podIP string, filter Filter) ([]Peer, error)
 			}
 		}
 
-		srcPort := int(ntohs(k.SourcePort))
-		srcAddr := fmt.Sprintf("%s:%d", srcIP.String(), srcPort)
-		if seen[srcAddr] {
+		peerAddr := formatAddrPort(pk.peerIP.String(), pk.peerPort)
+
+		direction := "in"
+		if !pk.isIn {
+			direction = "out"
+		}
+
+		// Dedup key includes direction when showing both.
+		dedupKey := peerAddr
+		if dirIn && dirOut {
+			dedupKey = direction + ":" + peerAddr
+		}
+		if seen[dedupKey] {
 			continue
 		}
-		seen[srcAddr] = true
+		seen[dedupKey] = true
 
 		state := "established"
 		if isClosing {
@@ -177,10 +334,12 @@ func ParseJSONCTOutput(data string, podIP string, filter Filter) ([]Peer, error)
 		rxBytes := rec.Value.Union0[1]
 
 		peers = append(peers, Peer{
-			Src:          srcAddr,
-			DstPort:      dstPort,
-			Proto:        proto,
+			Src:          peerAddr,
+			DstPort:      pk.dstPort,
+			Proto:        pk.proto,
 			State:        state,
+			Direction:    direction,
+			IPVersion:    pk.ipVersion,
 			RxBytes:      rxBytes,
 			TxBytes:      rec.Value.Bytes,
 			RxPackets:    rxPackets,

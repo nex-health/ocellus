@@ -11,12 +11,14 @@ import (
 // Peer represents a conntrack peer with its source address and the destination
 // port on the pod it is connected to.
 type Peer struct {
-	Src          string `json:"src"`      // e.g. "10.4.166.193:52628"
-	DstPort      int    `json:"dst_port"` // destination port on the pod
-	Proto        string `json:"proto"`    // "TCP" or "UDP"
-	State        string `json:"state"`    // "established" or "closing"
-	Bytes        uint64 `json:"bytes"`    // total bytes (RxBytes+TxBytes or Bytes)
-	Packets      uint64 `json:"packets"`  // total packets (RxPackets+TxPackets or Packets)
+	Src          string `json:"src"`        // e.g. "10.4.166.193:52628" or "[f00d::1]:52628"
+	DstPort      int    `json:"dst_port"`   // destination port on the pod
+	Proto        string `json:"proto"`      // "TCP" or "UDP"
+	State        string `json:"state"`      // "established" or "closing"
+	Direction    string `json:"direction"`  // "in" or "out"
+	IPVersion    string `json:"ip_version"` // "4" or "6"
+	Bytes        uint64 `json:"bytes"`      // total bytes (RxBytes+TxBytes or Bytes)
+	Packets      uint64 `json:"packets"`    // total packets (RxPackets+TxPackets or Packets)
 	RxBytes      uint64 `json:"rx_bytes"`
 	TxBytes      uint64 `json:"tx_bytes"`
 	RxPackets    uint64 `json:"rx_packets"`
@@ -30,19 +32,23 @@ type Peer struct {
 
 // Filter controls which conntrack entries are included.
 type Filter struct {
-	PortMin int        // 0 = no lower bound
-	PortMax int        // 0 = no upper bound; both 0 = all ports
-	Protos  []string   // e.g. ["TCP", "UDP"]; empty = ["TCP"]
-	SrcCIDR *net.IPNet // nil = no source filter
-	States  []string   // "established", "closing", "all"; empty = ["established"]
+	PortMin    int        // 0 = no lower bound
+	PortMax    int        // 0 = no upper bound; both 0 = all ports
+	Protos     []string   // e.g. ["TCP", "UDP"]; empty = ["TCP"]
+	SrcCIDR    *net.IPNet // nil = no source filter
+	States     []string   // "established", "closing", "all"; empty = ["established"]
+	Directions []string   // e.g. ["in"], ["out"], ["in","out"]; empty = ["in","out"]
+	IPVersions []string   // e.g. ["4"], ["6"], ["4","6"]; empty = ["4","6"]
 }
 
 // FilterOpts holds raw string options for building a Filter.
 type FilterOpts struct {
-	Port  string // e.g. "5432", "5432-5440", or ""
-	Proto string // e.g. "tcp", "udp", "tcp,udp"
-	Src   string // e.g. "10.4.166.0/24", "10.0.0.1", or ""
-	State string // e.g. "established", "closing", "all"
+	Port      string // e.g. "5432", "5432-5440", or ""
+	Proto     string // e.g. "tcp", "udp", "tcp,udp"
+	Src       string // e.g. "10.4.166.0/24", "10.0.0.1", or ""
+	State     string // e.g. "established", "closing", "all"
+	Direction string // e.g. "in", "out", "all"
+	IPVersion string // e.g. "4", "6", "all"
 }
 
 // NewFilter creates a Filter from string options, returning an error if any
@@ -85,7 +91,7 @@ func NewFilter(opts FilterOpts) (Filter, error) {
 	// Parse protocol.
 	proto := opts.Proto
 	if proto == "" {
-		proto = "tcp"
+		proto = "tcp,udp"
 	}
 	for p := range strings.SplitSeq(proto, ",") {
 		p = strings.ToUpper(strings.TrimSpace(p))
@@ -126,6 +132,38 @@ func NewFilter(opts FilterOpts) (Filter, error) {
 		}
 	}
 
+	// Parse direction.
+	dir := strings.ToLower(strings.TrimSpace(opts.Direction))
+	if dir == "" {
+		dir = "all"
+	}
+	switch dir {
+	case "in":
+		f.Directions = []string{"in"}
+	case "out":
+		f.Directions = []string{"out"}
+	case "all":
+		f.Directions = []string{"in", "out"}
+	default:
+		return f, fmt.Errorf("invalid direction %q (valid: in, out, all)", dir)
+	}
+
+	// Parse IP version.
+	ipv := strings.TrimSpace(opts.IPVersion)
+	if ipv == "" {
+		ipv = "all"
+	}
+	switch ipv {
+	case "4":
+		f.IPVersions = []string{"4"}
+	case "6":
+		f.IPVersions = []string{"6"}
+	case "all":
+		f.IPVersions = []string{"4", "6"}
+	default:
+		return f, fmt.Errorf("invalid IP version %q (valid: 4, 6, all)", ipv)
+	}
+
 	return f, nil
 }
 
@@ -151,10 +189,10 @@ func (f Filter) FilterSummary() string {
 		parts = append(parts, "all ports")
 	}
 
-	// Protocol (only show if not the default tcp).
+	// Protocol (only show if not the default tcp,udp).
 	protos := f.effectiveProtos()
-	if !(len(protos) == 1 && protos[0] == "TCP") {
-		parts = append(parts, strings.ToLower(strings.Join(protos, ",")))
+	if len(protos) == 1 {
+		parts = append(parts, strings.ToLower(protos[0]))
 	}
 
 	// Source CIDR.
@@ -168,12 +206,28 @@ func (f Filter) FilterSummary() string {
 		parts = append(parts, "state:"+strings.Join(states, ","))
 	}
 
+	// Direction (only show if not default "all").
+	dirs := f.effectiveDirections()
+	if len(dirs) == 1 {
+		parts = append(parts, "dir:"+dirs[0])
+	}
+
+	// IP version (only show if not default "all").
+	ipVers := f.effectiveIPVersions()
+	if len(ipVers) == 1 {
+		if ipVers[0] == "4" {
+			parts = append(parts, "ipv4")
+		} else {
+			parts = append(parts, "ipv6")
+		}
+	}
+
 	return strings.Join(parts, "  ")
 }
 
 func (f Filter) effectiveProtos() []string {
 	if len(f.Protos) == 0 {
-		return []string{"TCP"}
+		return []string{"TCP", "UDP"}
 	}
 	return f.Protos
 }
@@ -183,6 +237,20 @@ func (f Filter) effectiveStates() []string {
 		return []string{"established"}
 	}
 	return f.States
+}
+
+func (f Filter) effectiveDirections() []string {
+	if len(f.Directions) == 0 {
+		return []string{"in", "out"}
+	}
+	return f.Directions
+}
+
+func (f Filter) effectiveIPVersions() []string {
+	if len(f.IPVersions) == 0 {
+		return []string{"4", "6"}
+	}
+	return f.IPVersions
 }
 
 // parseKVUint extracts a uint64 value for a key like "Bytes=452" from the line.
@@ -220,13 +288,72 @@ func parseKVHex(line, key string) uint8 {
 	return uint8(v)
 }
 
+// splitAddrPort splits an address string into host and port.
+// Handles both IPv4 "ip:port" and IPv6 "[ip]:port" formats.
+func splitAddrPort(addr string) (string, int) {
+	host, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr, 0
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return host, 0
+	}
+	return host, port
+}
+
+// formatAddrPort formats a host:port pair. IPv6 addresses are bracketed.
+func formatAddrPort(host string, port int) string {
+	ip := net.ParseIP(host)
+	if ip != nil && ip.To4() == nil {
+		return fmt.Sprintf("[%s]:%d", host, port)
+	}
+	return fmt.Sprintf("%s:%d", host, port)
+}
+
 // ParseCTOutput parses cilium bpf ct list output and returns unique peers
-// with active IN connections to the given podIP matching the filter.
+// matching the filter for the given podIP.
 func ParseCTOutput(output string, podIP string, filter Filter) []Peer {
 	protos := filter.effectiveProtos()
-	prefixes := make([]string, len(protos))
-	for i, p := range protos {
-		prefixes[i] = p + " IN "
+	directions := filter.effectiveDirections()
+	ipVersions := filter.effectiveIPVersions()
+
+	// Build IP version set.
+	wantV4, wantV6 := false, false
+	for _, v := range ipVersions {
+		switch v {
+		case "4":
+			wantV4 = true
+		case "6":
+			wantV6 = true
+		}
+	}
+
+	// Build direction set.
+	dirIn := false
+	dirOut := false
+	for _, d := range directions {
+		switch d {
+		case "in":
+			dirIn = true
+		case "out":
+			dirOut = true
+		}
+	}
+
+	// Build prefixes: proto x direction.
+	type dirPrefix struct {
+		prefix string
+		isOut  bool
+	}
+	var prefixes []dirPrefix
+	for _, p := range protos {
+		if dirIn {
+			prefixes = append(prefixes, dirPrefix{p + " IN ", false})
+		}
+		if dirOut {
+			prefixes = append(prefixes, dirPrefix{p + " OUT ", true})
+		}
 	}
 
 	states := filter.effectiveStates()
@@ -244,7 +371,9 @@ func ParseCTOutput(output string, podIP string, filter Filter) []Peer {
 		}
 	}
 
-	dstPrefix := fmt.Sprintf("-> %s:", podIP)
+	// Build pod IP prefix patterns for both v4 and v6 formats.
+	podIPv4Prefix := podIP + ":"
+	podIPv6Prefix := "[" + podIP + "]:"
 
 	seen := make(map[string]bool)
 	var peers []Peer
@@ -252,9 +381,11 @@ func ParseCTOutput(output string, podIP string, filter Filter) []Peer {
 	for line := range strings.SplitSeq(output, "\n") {
 		// 1. Protocol + direction prefix.
 		matchedProto := false
+		isOutDir := false
 		for _, pfx := range prefixes {
-			if strings.HasPrefix(line, pfx) {
+			if strings.HasPrefix(line, pfx.prefix) {
 				matchedProto = true
+				isOutDir = pfx.isOut
 				break
 			}
 		}
@@ -262,15 +393,41 @@ func ParseCTOutput(output string, podIP string, filter Filter) []Peer {
 			continue
 		}
 
-		// 2. Destination IP match.
-		if !strings.Contains(line, dstPrefix) {
+		// 2. Extract fields.
+		fields := strings.Fields(line)
+		if len(fields) < 5 {
 			continue
 		}
 
-		// 3. State detection (always needed for Peer.State).
+		// For IN:  fields[2] = remote (peer), fields[4] = pod (dst)
+		// For OUT: fields[2] = pod (src),     fields[4] = remote (peer)
+		var podAddr, peerAddr string
+		if isOutDir {
+			podAddr = fields[2]
+			peerAddr = fields[4]
+		} else {
+			podAddr = fields[4]
+			peerAddr = fields[2]
+		}
+
+		// 3. Pod IP match — supports both "ip:port" and "[ip]:port".
+		if !strings.HasPrefix(podAddr, podIPv4Prefix) && !strings.HasPrefix(podAddr, podIPv6Prefix) {
+			continue
+		}
+
+		// 4. IP version filter.
+		isV6 := strings.HasPrefix(peerAddr, "[")
+		if isV6 && !wantV6 {
+			continue
+		}
+		if !isV6 && !wantV4 {
+			continue
+		}
+
+		// 5. State detection (always needed for Peer.State).
 		isClosing := strings.Contains(line, "RxClosing") || strings.Contains(line, "TxClosing")
 
-		// 4. State filter.
+		// 6. State filter.
 		if !stateAll {
 			if stateEstablished && !stateClosing && isClosing {
 				continue
@@ -280,21 +437,10 @@ func ParseCTOutput(output string, podIP string, filter Filter) []Peer {
 			}
 		}
 
-		// 5. Extract fields.
-		fields := strings.Fields(line)
-		if len(fields) < 5 {
-			continue
-		}
-		src := fields[2]
-		dst := fields[4]
-
-		// 6. Port range.
-		dstPort := 0
-		if idx := strings.LastIndex(dst, ":"); idx >= 0 {
-			if p, err := strconv.Atoi(dst[idx+1:]); err == nil {
-				dstPort = p
-			}
-		}
+		// 7. Port — DstPort is always extracted from fields[4].
+		// For IN:  fields[4] = podIP:podPort → pod's listening port.
+		// For OUT: fields[4] = remoteIP:remotePort → remote destination port.
+		_, dstPort := splitAddrPort(fields[4])
 		if filter.PortMin > 0 || filter.PortMax > 0 {
 			lo := filter.PortMin
 			hi := filter.PortMax
@@ -309,28 +455,42 @@ func ParseCTOutput(output string, podIP string, filter Filter) []Peer {
 			}
 		}
 
-		// 7. Source CIDR.
+		// 8. Source CIDR — applies to the peer address.
 		if filter.SrcCIDR != nil {
-			srcHost := src
-			if idx := strings.LastIndex(srcHost, ":"); idx >= 0 {
-				srcHost = srcHost[:idx]
-			}
+			srcHost, _ := splitAddrPort(peerAddr)
 			srcIP := net.ParseIP(srcHost)
 			if srcIP == nil || !filter.SrcCIDR.Contains(srcIP) {
 				continue
 			}
 		}
 
-		// 8. Dedup + collect.
-		if seen[src] {
+		// 9. Dedup + collect (keyed on peer address + direction).
+		dedupKey := peerAddr
+		if dirIn && dirOut {
+			// When showing both directions, same peer can appear as IN and OUT.
+			direction := "in"
+			if isOutDir {
+				direction = "out"
+			}
+			dedupKey = direction + ":" + peerAddr
+		}
+		if seen[dedupKey] {
 			continue
 		}
-		seen[src] = true
+		seen[dedupKey] = true
 
 		proto := fields[0]
 		state := "established"
 		if isClosing {
 			state = "closing"
+		}
+		direction := "in"
+		if isOutDir {
+			direction = "out"
+		}
+		ipVersion := "4"
+		if isV6 {
+			ipVersion = "6"
 		}
 
 		// Parse rich fields. Cilium versions use different naming:
@@ -373,10 +533,12 @@ func ParseCTOutput(output string, podIP string, filter Filter) []Peer {
 		}
 
 		peers = append(peers, Peer{
-			Src:          src,
+			Src:          peerAddr,
 			DstPort:      dstPort,
 			Proto:        proto,
 			State:        state,
+			Direction:    direction,
+			IPVersion:    ipVersion,
 			Bytes:        rxBytes + txBytes,
 			Packets:      rxPackets + txPackets,
 			RxBytes:      rxBytes,
@@ -397,11 +559,11 @@ func ParseCTOutput(output string, podIP string, filter Filter) []Peer {
 	return peers
 }
 
-// ComparePeerAddr compares two "ip:port" address strings numerically.
+// ComparePeerAddr compares two "ip:port" or "[ipv6]:port" address strings numerically.
 // Returns -1, 0, or 1 like strings.Compare but using numeric IP/port ordering.
 func ComparePeerAddr(a, b string) int {
-	aIP, aPort := splitHostPort(a)
-	bIP, bPort := splitHostPort(b)
+	aIP, aPort := splitHostPortCompare(a)
+	bIP, bPort := splitHostPortCompare(b)
 
 	if cmp := compareIP(aIP, bIP); cmp != 0 {
 		return cmp
@@ -415,16 +577,18 @@ func ComparePeerAddr(a, b string) int {
 	return 0
 }
 
-func splitHostPort(addr string) (string, int) {
-	idx := strings.LastIndex(addr, ":")
-	if idx < 0 {
-		return addr, 0
+func splitHostPortCompare(addr string) (string, int) {
+	// Try net.SplitHostPort first which handles [ipv6]:port.
+	host, portStr, err := net.SplitHostPort(addr)
+	if err == nil {
+		port, err := strconv.Atoi(portStr)
+		if err == nil {
+			return host, port
+		}
+		return host, 0
 	}
-	port, err := strconv.Atoi(addr[idx+1:])
-	if err != nil {
-		return addr, 0
-	}
-	return addr[:idx], port
+	// Fallback for bare addresses without port.
+	return addr, 0
 }
 
 func compareIP(a, b string) int {

@@ -132,11 +132,13 @@ func Diff(prev *Snapshot, curr Snapshot) []Event {
 	return events
 }
 
-// makePeerSet creates a map keyed by Src address for fast lookup.
+// makePeerSet creates a map keyed by direction+src for fast lookup.
+// Including direction prevents collisions when the same remote address
+// appears as both an inbound and outbound peer.
 func makePeerSet(peers []cilium.Peer) map[string]cilium.Peer {
 	m := make(map[string]cilium.Peer, len(peers))
 	for _, p := range peers {
-		m[p.Src] = p
+		m[p.Direction+":"+p.Src] = p
 	}
 	return m
 }

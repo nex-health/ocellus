@@ -2,7 +2,7 @@ BIN := ocellus
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: build release test race lint clean e2e e2e-up e2e-down
+.PHONY: build release test race lint fix clean e2e e2e-up e2e-down
 
 build:
 	go build -o $(BIN) .
@@ -15,6 +15,9 @@ test:
 
 race:
 	go test -race ./...
+
+fix:
+	go fix ./...
 
 lint:
 	golangci-lint run ./...

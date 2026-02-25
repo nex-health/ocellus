@@ -63,9 +63,11 @@ pod-name
 | `-n, --namespace` | `default` | Kubernetes namespace |
 | `-p, --port` | all | TCP port or range (e.g. `5432`, `5432-5440`) |
 | `-i, --interval` | `10` | Polling interval in seconds |
-| `--proto` | `tcp` | Protocol filter: `tcp`, `udp`, or `tcp,udp` |
+| `--proto` | `tcp,udp` | Protocol filter: `tcp`, `udp`, or `tcp,udp` |
 | `--src` | all | Source IP or CIDR filter (e.g. `10.4.166.0/24`) |
 | `--state` | `all` | Connection state: `established`, `closing`, `all` |
+| `--direction` | `all` | Connection direction: `in`, `out`, `all` |
+| `--ip-version` | `all` | IP version: `4`, `6`, `all` |
 | `--timeout` | `0` | Per-poll timeout in seconds (0 = no timeout) |
 | `--kubeconfig` | standard | Path to kubeconfig |
 | `-o, --output-format` | `jsonl` | Capture format: `jsonl`, `json`, `csv`, `text` |
@@ -81,6 +83,8 @@ pod-name
 ocellus -n production -p 5432 deploy/pgbouncer
 ocellus -p 5432-5440 --state all sts/postgres
 ocellus --src 10.4.166.0/24 my-pod-name
+ocellus --direction out -p 5432 deploy/myapp            # outbound connections to port 5432
+ocellus --direction all --proto tcp,udp sts/postgres     # both inbound and outbound
 
 # Dump mode (non-interactive)
 ocellus --dump -n production -p 5432 deploy/pgbouncer          # one-shot dump to stdout
@@ -123,6 +127,8 @@ ocellus --dump --repeat 60 -f connections.jsonl sts/postgres    # periodic dump 
 | `S` | Toggle reverse sort |
 | `f` | Cycle state filter (all, established, closing) |
 | `F` | Cycle protocol filter (all, TCP, UDP) |
+| `D` | Cycle direction filter (all, IN, OUT) |
+| `V` | Cycle IP version filter (all, v4, v6) |
 | `/` | Search peers by IP |
 | `n/N` | Next/prev search match |
 | `Esc` | Back to pod list / clear search |

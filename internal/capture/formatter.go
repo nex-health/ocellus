@@ -77,7 +77,7 @@ func NewCSVFormatter() *CSVFormatter {
 }
 
 var snapshotCSVHeader = []string{
-	"timestamp", "pod", "src", "dst_port", "proto", "state",
+	"timestamp", "pod", "src", "dst_port", "proto", "state", "direction", "ip_version",
 	"bytes", "packets", "rx_bytes", "tx_bytes", "rx_packets", "tx_packets",
 	"expires", "last_rx_report", "last_tx_report", "rx_flags_seen", "tx_flags_seen",
 }
@@ -107,7 +107,7 @@ func (f *CSVFormatter) FormatSnapshot(s Snapshot) ([]byte, error) {
 	for _, podName := range podNames {
 		for _, p := range s.Pods[podName] {
 			row := []string{
-				ts, podName, p.Src, fmt.Sprintf("%d", p.DstPort), p.Proto, p.State,
+				ts, podName, p.Src, fmt.Sprintf("%d", p.DstPort), p.Proto, p.State, p.Direction, p.IPVersion,
 				fmt.Sprintf("%d", p.Bytes), fmt.Sprintf("%d", p.Packets),
 				fmt.Sprintf("%d", p.RxBytes), fmt.Sprintf("%d", p.TxBytes),
 				fmt.Sprintf("%d", p.RxPackets), fmt.Sprintf("%d", p.TxPackets),
@@ -168,8 +168,12 @@ func (f *TextFormatter) FormatSnapshot(s Snapshot) ([]byte, error) {
 		peers := s.Pods[podName]
 		fmt.Fprintf(&buf, "  %s (%d peers):\n", podName, len(peers))
 		for _, p := range peers {
-			fmt.Fprintf(&buf, "    %s -> :%d %s %s bytes=%d\n",
-				p.Src, p.DstPort, p.Proto, p.State, p.Bytes)
+			ipv := "v4"
+			if p.IPVersion == "6" {
+				ipv = "v6"
+			}
+			fmt.Fprintf(&buf, "    %s -> :%d %s %s %s %s bytes=%d\n",
+				p.Src, p.DstPort, p.Proto, p.State, p.Direction, ipv, p.Bytes)
 		}
 	}
 

@@ -96,6 +96,9 @@ var (
 
 	filterActiveStyle = lipgloss.NewStyle().Foreground(colorCyan).Bold(true)
 
+	dirInStyle  = lipgloss.NewStyle().Foreground(colorCyan)
+	dirOutStyle = lipgloss.NewStyle().Foreground(colorYellow)
+
 	searchBarStyle = lipgloss.NewStyle().
 			Background(colorBg).
 			Foreground(colorFg).

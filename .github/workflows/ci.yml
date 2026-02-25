@@ -19,6 +19,15 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Fix check
+        run: |
+          diff=$(go fix -diff ./...)
+          if [ -n "$diff" ]; then
+            echo "$diff"
+            echo "::error::go fix would make changes; run 'go fix ./...' and commit"
+            exit 1
+          fi
+
       - name: Vet
         run: go vet ./...
 

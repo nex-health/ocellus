@@ -29,14 +29,16 @@ func main() {
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	namespace := flag.StringP("namespace", "n", "default", "Kubernetes namespace")
 	port := flag.StringP("port", "p", "", "TCP port or range to track (e.g. 5432, 5432-5440)")
-	proto := flag.String("proto", "tcp", "Protocol filter: tcp, udp, or tcp,udp")
+	proto := flag.String("proto", "tcp,udp", "Protocol filter: tcp, udp, or tcp,udp")
 	src := flag.String("src", "", "Source IP or CIDR filter (e.g. 10.4.166.0/24)")
 	state := flag.String("state", "all", "Connection state: established, closing, all")
+	direction := flag.String("direction", "all", "Connection direction: in, out, all")
 	interval := flag.IntP("interval", "i", 10, "Polling interval in seconds")
 	timeout := flag.Int("timeout", 0, "Poll timeout in seconds (0 = no timeout)")
 	kubeconfig := flag.String("kubeconfig", "", "Path to kubeconfig (default: standard resolution)")
 	outputFormat := flag.StringP("output-format", "o", "jsonl", "Capture format: jsonl, json, csv, text")
 	outputFile := flag.StringP("output-file", "f", "", "Capture output file (default: auto-generated)")
+	ipVersion := flag.String("ip-version", "all", "IP version: 4, 6, all")
 	dump := flag.Bool("dump", false, "Non-interactive dump mode (bypasses TUI)")
 	repeat := flag.Int("repeat", 0, "Repeat interval in seconds for dump mode (0 = one-shot)")
 	flag.Usage = func() {
@@ -63,10 +65,12 @@ func main() {
 
 	// Build filter.
 	filter, err := cilium.NewFilter(cilium.FilterOpts{
-		Port:  *port,
-		Proto: *proto,
-		Src:   *src,
-		State: *state,
+		Port:      *port,
+		Proto:     *proto,
+		Src:       *src,
+		State:     *state,
+		Direction: *direction,
+		IPVersion: *ipVersion,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -106,6 +110,15 @@ func main() {
 		return
 	}
 
+	// Redirect stderr to suppress exec-based kubeconfig plugin output
+	// (e.g. aws-iam-authenticator, gke-gcloud-auth-plugin) that would
+	// corrupt the Bubble Tea alt-screen.
+	origStderr := os.Stderr
+	devNull, devNullErr := os.Open(os.DevNull)
+	if devNullErr == nil {
+		os.Stderr = devNull
+	}
+
 	m := tui.New(tui.Config{
 		Filter:       filter,
 		Namespace:    *namespace,
@@ -122,6 +135,13 @@ func main() {
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	finalModel, err := p.Run()
+
+	// Restore stderr before any post-TUI output.
+	os.Stderr = origStderr
+	if devNullErr == nil {
+		devNull.Close()
+	}
+
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)

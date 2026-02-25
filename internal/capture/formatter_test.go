@@ -15,7 +15,7 @@ func testSnapshot() Snapshot {
 		Timestamp: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
 		Pods: map[string][]cilium.Peer{
 			"pod-1": {
-				{Src: "10.0.0.1:1000", DstPort: 5432, Proto: "TCP", State: "established", Bytes: 1024},
+				{Src: "10.0.0.1:1000", DstPort: 5432, Proto: "TCP", State: "established", Direction: "in", IPVersion: "4", Bytes: 1024},
 			},
 		},
 	}
@@ -117,8 +117,15 @@ func TestCSVFormatterSnapshot(t *testing.T) {
 	if !strings.HasPrefix(lines[0], "timestamp,") {
 		t.Errorf("header should start with timestamp, got %q", lines[0])
 	}
+	if !strings.Contains(lines[0], "ip_version") {
+		t.Error("CSV header should contain ip_version column")
+	}
 	if !strings.Contains(lines[1], "pod-1") {
 		t.Error("data row should contain pod name")
+	}
+	// ip_version column should be present in data row.
+	if !strings.Contains(lines[1], ",4,") {
+		t.Error("CSV data row should contain ip_version value '4'")
 	}
 }
 
@@ -223,7 +230,7 @@ func TestJSONLSnapshotContainsPeerFields(t *testing.T) {
 		Pods: map[string][]cilium.Peer{
 			"pod-1": {{
 				Src: "10.0.0.1:1000", DstPort: 5432, Proto: "TCP",
-				State: "established", Bytes: 1024, RxBytes: 512, TxBytes: 512,
+				State: "established", Direction: "in", Bytes: 1024, RxBytes: 512, TxBytes: 512,
 			}},
 		},
 	}
@@ -237,5 +244,36 @@ func TestJSONLSnapshotContainsPeerFields(t *testing.T) {
 	}
 	if !strings.Contains(s, `"rx_bytes"`) {
 		t.Error("JSON should contain rx_bytes field")
+	}
+	if !strings.Contains(s, `"direction"`) {
+		t.Error("JSON should contain direction field")
+	}
+}
+
+func TestCSVSnapshotContainsDirection(t *testing.T) {
+	f := NewCSVFormatter()
+	data, err := f.FormatSnapshot(testSnapshot())
+	if err != nil {
+		t.Fatalf("FormatSnapshot error: %v", err)
+	}
+	s := string(data)
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	if !strings.Contains(lines[0], "direction") {
+		t.Errorf("CSV header should contain direction, got %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "in") {
+		t.Errorf("CSV data row should contain direction value, got %q", lines[1])
+	}
+}
+
+func TestTextFormatterSnapshotContainsDirection(t *testing.T) {
+	f := &TextFormatter{}
+	data, err := f.FormatSnapshot(testSnapshot())
+	if err != nil {
+		t.Fatalf("FormatSnapshot error: %v", err)
+	}
+	s := string(data)
+	if !strings.Contains(s, " in ") {
+		t.Errorf("text output should contain direction, got %q", s)
 	}
 }

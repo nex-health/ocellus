@@ -58,6 +58,127 @@ func TestParseCTOutput_ExcludesOUT(t *testing.T) {
 	}
 }
 
+func TestParseCTOutput_DirectionOut(t *testing.T) {
+	peers := ParseCTOutput(sampleCTOutput, "10.4.34.6", Filter{
+		PortMin:    4143, PortMax: 4143,
+		Directions: []string{"out"},
+		States:     []string{"all"},
+	})
+	// The sample has one OUT line: TCP OUT 10.4.34.6:4143 -> 10.4.166.193:52628
+	// Pod = 10.4.34.6, so podAddr = fields[2] = "10.4.34.6:4143" matches.
+	// Peer = fields[4] = "10.4.166.193:52628".
+	// DstPort = port from fields[4] = 52628, not 4143.
+	// Since we filter on port 4143 (from fields[4]), but fields[4] for OUT is the remote port 52628,
+	// this entry should NOT match the port filter 4143.
+	if len(peers) != 0 {
+		t.Fatalf("expected 0 OUT peers with port 4143 filter, got %d: %v", len(peers), peers)
+	}
+
+	// Without port filter, the OUT entry should appear.
+	peers = ParseCTOutput(sampleCTOutput, "10.4.34.6", Filter{
+		Directions: []string{"out"},
+		States:     []string{"all"},
+	})
+	if len(peers) != 1 {
+		t.Fatalf("expected 1 OUT peer (no port filter), got %d: %v", len(peers), peers)
+	}
+	if peers[0].Src != "10.4.166.193:52628" {
+		t.Errorf("OUT peer Src = %q, want 10.4.166.193:52628", peers[0].Src)
+	}
+	if peers[0].Direction != "out" {
+		t.Errorf("OUT peer Direction = %q, want out", peers[0].Direction)
+	}
+	if peers[0].DstPort != 52628 {
+		t.Errorf("OUT peer DstPort = %d, want 52628", peers[0].DstPort)
+	}
+}
+
+func TestParseCTOutput_DirectionAll(t *testing.T) {
+	peers := ParseCTOutput(sampleCTOutput, "10.4.34.6", Filter{
+		Directions: []string{"in", "out"},
+		States:     []string{"all"},
+	})
+	// IN peers: 4 (3 established + 1 closing), OUT peers: 1
+	// Total: 5
+	if len(peers) != 5 {
+		t.Fatalf("expected 5 peers (all directions + all states), got %d: %v", len(peers), peers)
+	}
+
+	// Check that we have both directions.
+	inCount, outCount := 0, 0
+	for _, p := range peers {
+		switch p.Direction {
+		case "in":
+			inCount++
+		case "out":
+			outCount++
+		}
+	}
+	if inCount != 4 {
+		t.Errorf("expected 4 IN peers, got %d", inCount)
+	}
+	if outCount != 1 {
+		t.Errorf("expected 1 OUT peer, got %d", outCount)
+	}
+}
+
+func TestParseCTOutput_DirectionAllDefault(t *testing.T) {
+	// Empty Directions should default to all (IN + OUT).
+	peers := ParseCTOutput(sampleCTOutput, "10.4.34.6", Filter{
+		States: []string{"all"},
+	})
+	// Should include both IN and OUT peers.
+	inCount, outCount := 0, 0
+	for _, p := range peers {
+		switch p.Direction {
+		case "in":
+			inCount++
+		case "out":
+			outCount++
+		}
+	}
+	if inCount == 0 {
+		t.Error("expected at least 1 IN peer with default direction")
+	}
+	if outCount == 0 {
+		t.Error("expected at least 1 OUT peer with default direction")
+	}
+}
+
+func TestParseCTOutput_DirectionField(t *testing.T) {
+	// Verify that IN peers get direction="in".
+	peers := ParseCTOutput(sampleCTOutput, "10.4.34.6", portFilter(4143))
+	for _, p := range peers {
+		if p.Direction != "in" {
+			t.Errorf("IN peer %s has Direction = %q, want in", p.Src, p.Direction)
+		}
+	}
+}
+
+func TestParseCTOutput_UDPOut(t *testing.T) {
+	output := `UDP OUT 10.1.0.1:12345 -> 10.2.0.1:53 expires=100 Flags=0x0000 []
+`
+	peers := ParseCTOutput(output, "10.1.0.1", Filter{
+		Protos:     []string{"UDP"},
+		Directions: []string{"out"},
+	})
+	if len(peers) != 1 {
+		t.Fatalf("expected 1 UDP OUT peer, got %d", len(peers))
+	}
+	if peers[0].Src != "10.2.0.1:53" {
+		t.Errorf("Src = %q, want 10.2.0.1:53", peers[0].Src)
+	}
+	if peers[0].DstPort != 53 {
+		t.Errorf("DstPort = %d, want 53", peers[0].DstPort)
+	}
+	if peers[0].Direction != "out" {
+		t.Errorf("Direction = %q, want out", peers[0].Direction)
+	}
+	if peers[0].Proto != "UDP" {
+		t.Errorf("Proto = %q, want UDP", peers[0].Proto)
+	}
+}
+
 func TestParseCTOutput_DifferentIP(t *testing.T) {
 	peers := ParseCTOutput(sampleCTOutput, "10.4.100.2", portFilter(5432))
 	if len(peers) != 1 {
@@ -86,10 +207,11 @@ func TestParseCTOutput_Empty(t *testing.T) {
 }
 
 func TestParseCTOutput_AllPorts(t *testing.T) {
-	peers := ParseCTOutput(sampleCTOutput, "10.4.34.6", Filter{})
+	// Test all-ports with IN direction to verify port filtering.
+	peers := ParseCTOutput(sampleCTOutput, "10.4.34.6", Filter{Directions: []string{"in"}})
 
 	if len(peers) != 3 {
-		t.Fatalf("expected 3 peers (all ports), got %d: %v", len(peers), peers)
+		t.Fatalf("expected 3 IN peers (all ports), got %d: %v", len(peers), peers)
 	}
 
 	for _, p := range peers {
@@ -101,9 +223,9 @@ func TestParseCTOutput_AllPorts(t *testing.T) {
 	// Also check that all-ports mode picks up connections to different ports.
 	multiPortOutput := sampleCTOutput + `TCP IN 10.4.200.1:11111 -> 10.4.34.6:8080 expires=277700 RxPackets=1 RxBytes=100 RxFlagsSeen=0x02 LastRxReport=277690 TxPackets=1 TxBytes=100 TxFlagsSeen=0x12 LastTxReport=277690 Flags=0x0012 [ SeenNonSyn ] RevNAT=0 SourceSecurityID=7 IfIndex=0
 `
-	peers = ParseCTOutput(multiPortOutput, "10.4.34.6", Filter{})
+	peers = ParseCTOutput(multiPortOutput, "10.4.34.6", Filter{Directions: []string{"in"}})
 	if len(peers) != 4 {
-		t.Fatalf("expected 4 peers (multi-port), got %d: %v", len(peers), peers)
+		t.Fatalf("expected 4 IN peers (multi-port), got %d: %v", len(peers), peers)
 	}
 
 	// Find the 8080 peer.
@@ -442,8 +564,8 @@ func TestNewFilter(t *testing.T) {
 			name: "default proto and state",
 			opts: FilterOpts{},
 			check: func(t *testing.T, f Filter) {
-				if len(f.Protos) != 1 || f.Protos[0] != "TCP" {
-					t.Errorf("protos = %v, want [TCP]", f.Protos)
+				if len(f.Protos) != 2 || f.Protos[0] != "TCP" || f.Protos[1] != "UDP" {
+					t.Errorf("protos = %v, want [TCP UDP]", f.Protos)
 				}
 				if len(f.States) != 1 || f.States[0] != "established" {
 					t.Errorf("states = %v, want [established]", f.States)
@@ -480,6 +602,47 @@ func TestNewFilter(t *testing.T) {
 			opts:    FilterOpts{Proto: "tcp,foo"},
 			wantErr: true,
 		},
+		{
+			name: "direction in",
+			opts: FilterOpts{Direction: "in"},
+			check: func(t *testing.T, f Filter) {
+				if len(f.Directions) != 1 || f.Directions[0] != "in" {
+					t.Errorf("directions = %v, want [in]", f.Directions)
+				}
+			},
+		},
+		{
+			name: "direction out",
+			opts: FilterOpts{Direction: "out"},
+			check: func(t *testing.T, f Filter) {
+				if len(f.Directions) != 1 || f.Directions[0] != "out" {
+					t.Errorf("directions = %v, want [out]", f.Directions)
+				}
+			},
+		},
+		{
+			name: "direction all",
+			opts: FilterOpts{Direction: "all"},
+			check: func(t *testing.T, f Filter) {
+				if len(f.Directions) != 2 || f.Directions[0] != "in" || f.Directions[1] != "out" {
+					t.Errorf("directions = %v, want [in out]", f.Directions)
+				}
+			},
+		},
+		{
+			name: "direction default",
+			opts: FilterOpts{},
+			check: func(t *testing.T, f Filter) {
+				if len(f.Directions) != 2 || f.Directions[0] != "in" || f.Directions[1] != "out" {
+					t.Errorf("default directions = %v, want [in out]", f.Directions)
+				}
+			},
+		},
+		{
+			name:    "invalid direction",
+			opts:    FilterOpts{Direction: "foo"},
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -509,11 +672,15 @@ func TestFilterSummary(t *testing.T) {
 		{"default", Filter{}, "all ports"},
 		{"single port", Filter{PortMin: 5432, PortMax: 5432}, ":5432"},
 		{"port range", Filter{PortMin: 5432, PortMax: 5440}, ":5432-5440"},
-		{"tcp only", Filter{Protos: []string{"TCP"}}, "all ports"},
+		{"tcp only", Filter{Protos: []string{"TCP"}}, "all ports  tcp"},
 		{"udp only", Filter{Protos: []string{"UDP"}}, "all ports  udp"},
-		{"multi proto", Filter{PortMin: 53, PortMax: 53, Protos: []string{"TCP", "UDP"}}, ":53  tcp,udp"},
+		{"multi proto", Filter{PortMin: 53, PortMax: 53, Protos: []string{"TCP", "UDP"}}, ":53"},
 		{"state all", Filter{States: []string{"all"}}, "all ports  state:all"},
 		{"src cidr", Filter{SrcCIDR: func() *net.IPNet { _, n, _ := net.ParseCIDR("10.0.0.0/24"); return n }()}, "all ports  src:10.0.0.0/24"},
+		{"direction in", Filter{Directions: []string{"in"}}, "all ports  dir:in"},
+		{"direction out", Filter{Directions: []string{"out"}}, "all ports  dir:out"},
+		{"direction all (default)", Filter{Directions: []string{"in", "out"}}, "all ports"},
+		{"single port tcp only", Filter{PortMin: 5432, PortMax: 5432, Protos: []string{"TCP"}}, ":5432  tcp"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -542,5 +709,198 @@ func TestSplitHostPort_MissingPort(t *testing.T) {
 	// No colon at all: returns full string as host, port 0.
 	if got := ComparePeerAddr("10.0.0.1", "10.0.0.2"); got != -1 {
 		t.Errorf("expected -1 for addresses without ports, got %d", got)
+	}
+}
+
+const sampleCTOutputIPv6 = `TCP IN [f00d::a0f:0:0:4870]:80 -> [f00d::a0f:0:0:4264]:34274 expires=277365 RxPackets=5 RxBytes=452 RxFlagsSeen=0x02 LastRxReport=277355 TxPackets=3 TxBytes=200 TxFlagsSeen=0x12 LastTxReport=277355 Flags=0x0012 [ SeenNonSyn ] RevNAT=0 SourceSecurityID=2 BackendID=0
+TCP OUT [f00d::a0f:0:0:4264]:34274 -> [f00d::a0f:0:0:4870]:80 expires=277365 RxPackets=3 RxBytes=200 RxFlagsSeen=0x12 LastRxReport=277355 TxPackets=5 TxBytes=452 TxFlagsSeen=0x02 LastTxReport=277355 Flags=0x0012 [ SeenNonSyn ] RevNAT=5 SourceSecurityID=2 BackendID=0
+`
+
+func TestParseCTOutput_IPv6(t *testing.T) {
+	peers := ParseCTOutput(sampleCTOutputIPv6, "f00d::a0f:0:0:4264", Filter{
+		Directions: []string{"in"},
+	})
+	if len(peers) != 1 {
+		t.Fatalf("expected 1 IPv6 IN peer, got %d: %v", len(peers), peers)
+	}
+	p := peers[0]
+	if p.Src != "[f00d::a0f:0:0:4870]:80" {
+		t.Errorf("Src = %q, want [f00d::a0f:0:0:4870]:80", p.Src)
+	}
+	if p.DstPort != 34274 {
+		t.Errorf("DstPort = %d, want 34274", p.DstPort)
+	}
+	if p.IPVersion != "6" {
+		t.Errorf("IPVersion = %q, want 6", p.IPVersion)
+	}
+	if p.RxBytes != 452 {
+		t.Errorf("RxBytes = %d, want 452", p.RxBytes)
+	}
+	if p.TxBytes != 200 {
+		t.Errorf("TxBytes = %d, want 200", p.TxBytes)
+	}
+}
+
+func TestParseCTOutput_IPv6Mixed(t *testing.T) {
+	mixed := sampleCTOutput + sampleCTOutputIPv6
+	// Parse all (both v4 and v6) — use the pod IP for v6 entries.
+	v6Peers := ParseCTOutput(mixed, "f00d::a0f:0:0:4264", Filter{
+		Directions: []string{"in", "out"},
+		States:     []string{"all"},
+	})
+	if len(v6Peers) != 2 {
+		t.Fatalf("expected 2 IPv6 peers (IN+OUT), got %d: %v", len(v6Peers), v6Peers)
+	}
+	for _, p := range v6Peers {
+		if p.IPVersion != "6" {
+			t.Errorf("expected IPVersion=6, got %q for %s", p.IPVersion, p.Src)
+		}
+	}
+
+	// Filter to v4 only.
+	v4Peers := ParseCTOutput(mixed, "f00d::a0f:0:0:4264", Filter{
+		IPVersions: []string{"4"},
+		States:     []string{"all"},
+	})
+	if len(v4Peers) != 0 {
+		t.Fatalf("expected 0 v4 peers for IPv6 podIP, got %d", len(v4Peers))
+	}
+
+	// Filter to v6 only.
+	v6Only := ParseCTOutput(mixed, "f00d::a0f:0:0:4264", Filter{
+		IPVersions: []string{"6"},
+		States:     []string{"all"},
+	})
+	if len(v6Only) != 2 {
+		t.Fatalf("expected 2 v6-only peers, got %d", len(v6Only))
+	}
+}
+
+func TestParseCTOutput_IPv6PortExtraction(t *testing.T) {
+	output := `TCP IN [2001:db8::1]:8080 -> [2001:db8::2]:443 expires=100 RxPackets=1 RxBytes=100 TxPackets=1 TxBytes=50 Flags=0x0012 [ SeenNonSyn ]
+`
+	peers := ParseCTOutput(output, "2001:db8::2", Filter{
+		PortMin: 443, PortMax: 443,
+	})
+	if len(peers) != 1 {
+		t.Fatalf("expected 1 peer, got %d", len(peers))
+	}
+	if peers[0].DstPort != 443 {
+		t.Errorf("DstPort = %d, want 443", peers[0].DstPort)
+	}
+	host, port := splitAddrPort("[2001:db8::1]:8080")
+	if host != "2001:db8::1" {
+		t.Errorf("splitAddrPort host = %q, want 2001:db8::1", host)
+	}
+	if port != 8080 {
+		t.Errorf("splitAddrPort port = %d, want 8080", port)
+	}
+}
+
+func TestParseCTOutput_IPv6CIDR(t *testing.T) {
+	output := `TCP IN [2001:db8::1]:1234 -> [2001:db8::100]:80 expires=100 Flags=0x0012 [ SeenNonSyn ]
+TCP IN [2001:db9::1]:5678 -> [2001:db8::100]:80 expires=100 Flags=0x0012 [ SeenNonSyn ]
+`
+	_, cidr, _ := net.ParseCIDR("2001:db8::/32")
+	peers := ParseCTOutput(output, "2001:db8::100", Filter{
+		SrcCIDR: cidr,
+	})
+	if len(peers) != 1 {
+		t.Fatalf("expected 1 peer from 2001:db8::/32, got %d: %v", len(peers), peers)
+	}
+	if peers[0].Src != "[2001:db8::1]:1234" {
+		t.Errorf("Src = %q, want [2001:db8::1]:1234", peers[0].Src)
+	}
+}
+
+func TestParseCTOutput_IPv4IPVersion(t *testing.T) {
+	// Existing v4 entries should get IPVersion="4".
+	peers := ParseCTOutput(sampleCTOutput, "10.4.34.6", portFilter(4143))
+	for _, p := range peers {
+		if p.IPVersion != "4" {
+			t.Errorf("IPv4 peer %s has IPVersion = %q, want 4", p.Src, p.IPVersion)
+		}
+	}
+}
+
+func TestNewFilter_IPVersion(t *testing.T) {
+	tests := []struct {
+		name    string
+		ipv     string
+		want    []string
+		wantErr bool
+	}{
+		{"v4", "4", []string{"4"}, false},
+		{"v6", "6", []string{"6"}, false},
+		{"all", "all", []string{"4", "6"}, false},
+		{"default", "", []string{"4", "6"}, false},
+		{"invalid", "5", nil, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f, err := NewFilter(FilterOpts{IPVersion: tt.ipv})
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(f.IPVersions) != len(tt.want) {
+				t.Fatalf("IPVersions = %v, want %v", f.IPVersions, tt.want)
+			}
+			for i, v := range f.IPVersions {
+				if v != tt.want[i] {
+					t.Errorf("IPVersions[%d] = %q, want %q", i, v, tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestComparePeerAddr_IPv6(t *testing.T) {
+	tests := []struct {
+		a, b string
+		want int
+	}{
+		{"[::1]:1000", "[::2]:1000", -1},
+		{"[::2]:1000", "[::1]:1000", 1},
+		{"[::1]:1000", "[::1]:1000", 0},
+		{"[::1]:1000", "[::1]:2000", -1},
+		// Mixed v4 and v6: IPv4 10.0.0.1 maps to ::ffff:10.0.0.1 which is > ::1.
+		{"10.0.0.1:1000", "[::1]:1000", 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.a+"_vs_"+tt.b, func(t *testing.T) {
+			got := ComparePeerAddr(tt.a, tt.b)
+			if got != tt.want {
+				t.Errorf("ComparePeerAddr(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseCTOutput_IPVersionFilter(t *testing.T) {
+	mixed := sampleCTOutput + sampleCTOutputIPv6
+
+	// v4 filter should only return v4 peers.
+	v4Peers := ParseCTOutput(mixed, "10.4.34.6", Filter{
+		IPVersions: []string{"4"},
+	})
+	for _, p := range v4Peers {
+		if p.IPVersion != "4" {
+			t.Errorf("v4 filter returned v6 peer: %s", p.Src)
+		}
+	}
+
+	// v6 filter should not return v4 peers.
+	v6Peers := ParseCTOutput(mixed, "10.4.34.6", Filter{
+		IPVersions: []string{"6"},
+		States:     []string{"all"},
+	})
+	if len(v6Peers) != 0 {
+		t.Fatalf("expected 0 v6 peers for v4 podIP, got %d", len(v6Peers))
 	}
 }

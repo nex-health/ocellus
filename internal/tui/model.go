@@ -28,6 +28,7 @@ const (
 	sortSrc sortField = iota
 	sortPort
 	sortProto
+	sortDir
 	sortState
 	sortBytes
 	sortFieldCount // sentinel for cycling
@@ -68,6 +69,46 @@ func (f protoFilter) String() string {
 		return "TCP"
 	case protoUDP:
 		return "UDP"
+	default:
+		return "all"
+	}
+}
+
+type dirFilter int
+
+const (
+	dirAll dirFilter = iota
+	dirIn
+	dirOut
+	dirFilterCount // sentinel for cycling
+)
+
+func (f dirFilter) String() string {
+	switch f {
+	case dirIn:
+		return "IN"
+	case dirOut:
+		return "OUT"
+	default:
+		return "all"
+	}
+}
+
+type ipVerFilter int
+
+const (
+	ipVerAll ipVerFilter = iota
+	ipVer4
+	ipVer6
+	ipVerFilterCount // sentinel for cycling
+)
+
+func (f ipVerFilter) String() string {
+	switch f {
+	case ipVer4:
+		return "v4"
+	case ipVer6:
+		return "v6"
 	default:
 		return "all"
 	}
@@ -119,6 +160,8 @@ type Model struct {
 	sortReverse    bool
 	stateFilter    stateFilter
 	protoFilter    protoFilter
+	dirFilter      dirFilter
+	ipVerFilter    ipVerFilter
 	searching      bool
 	searchQuery    string
 	showHelp       bool
@@ -606,6 +649,8 @@ func (m Model) updatePeerList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searchQuery = ""
 		m.stateFilter = stateAll
 		m.protoFilter = protoAll
+		m.dirFilter = dirAll
+		m.ipVerFilter = ipVerAll
 		return m, nil
 	case "f":
 		m.stateFilter = (m.stateFilter + 1) % stateFilterCount
@@ -613,6 +658,14 @@ func (m Model) updatePeerList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "F":
 		m.protoFilter = (m.protoFilter + 1) % protoFilterCount
+		m.scroll = 0
+		return m, nil
+	case "D":
+		m.dirFilter = (m.dirFilter + 1) % dirFilterCount
+		m.scroll = 0
+		return m, nil
+	case "V":
+		m.ipVerFilter = (m.ipVerFilter + 1) % ipVerFilterCount
 		m.scroll = 0
 		return m, nil
 	case "s":
@@ -672,7 +725,7 @@ func highlightMatch(text, query string) string {
 
 // filteredPeers returns peers matching the current search query and quick filters.
 func (m Model) filteredPeers(peers []cilium.Peer) []cilium.Peer {
-	if m.searchQuery == "" && m.stateFilter == stateAll && m.protoFilter == protoAll {
+	if m.searchQuery == "" && m.stateFilter == stateAll && m.protoFilter == protoAll && m.dirFilter == dirAll && m.ipVerFilter == ipVerAll {
 		return peers
 	}
 	q := strings.ToLower(m.searchQuery)
@@ -683,6 +736,16 @@ func (m Model) filteredPeers(peers []cilium.Peer) []cilium.Peer {
 		}
 		if m.protoFilter != protoAll && !strings.EqualFold(p.Proto, m.protoFilter.String()) {
 			continue
+		}
+		if m.dirFilter != dirAll && !strings.EqualFold(p.Direction, m.dirFilter.String()) {
+			continue
+		}
+		if m.ipVerFilter != ipVerAll {
+			wantV6 := m.ipVerFilter == ipVer6
+			isV6 := strings.Contains(p.Src, "[")
+			if wantV6 != isV6 {
+				continue
+			}
 		}
 		if q != "" && !strings.Contains(strings.ToLower(p.Src), q) {
 			continue
@@ -703,6 +766,8 @@ func sortPeers(peers []cilium.Peer, field sortField, reverse bool) []cilium.Peer
 			less = sorted[i].DstPort < sorted[j].DstPort
 		case sortProto:
 			less = sorted[i].Proto < sorted[j].Proto
+		case sortDir:
+			less = sorted[i].Direction < sorted[j].Direction
 		case sortState:
 			less = sorted[i].State < sorted[j].State
 		case sortBytes:
@@ -793,10 +858,12 @@ func (m Model) viewHelp(w int) string {
 		"  esc           Back / Clear search",
 		"  p / space     Toggle pause",
 		"  r             Resume polling",
-		"  s             Cycle sort (src, port, proto, state, bytes)",
+		"  s             Cycle sort (src, port, proto, dir, state, bytes)",
 		"  S             Toggle reverse sort",
 		"  f             Cycle state filter (all, established, closing)",
 		"  F             Cycle protocol filter (all, TCP, UDP)",
+		"  D             Cycle direction filter (all, IN, OUT)",
+		"  V             Cycle IP version filter (all, v4, v6)",
 		"  /             Search peers",
 		"  n/N           Next/prev search match",
 		"  tab/shift+tab Jump to next/prev pod with peers",
@@ -1039,6 +1106,12 @@ func (m Model) viewPeerList(w int) string {
 	if m.protoFilter != protoAll {
 		subheader += "  " + filterActiveStyle.Render(fmt.Sprintf("[proto:%s]", m.protoFilter))
 	}
+	if m.dirFilter != dirAll {
+		subheader += "  " + filterActiveStyle.Render(fmt.Sprintf("[dir:%s]", m.dirFilter))
+	}
+	if m.ipVerFilter != ipVerAll {
+		subheader += "  " + filterActiveStyle.Render(fmt.Sprintf("[ip:%s]", m.ipVerFilter))
+	}
 	b.WriteString(detailHeaderStyle.Render(subheader))
 	b.WriteString("\n")
 
@@ -1086,6 +1159,7 @@ func (m Model) viewPeerList(w int) string {
 		srcLabel := "Peer Address:Port"
 		localLabel := "Local Address:Port"
 		protoLabel := "Proto"
+		dirLabel := "Dir"
 		stateLabel := "State"
 		bytesLabel := "Rx/Tx"
 
@@ -1101,6 +1175,8 @@ func (m Model) viewPeerList(w int) string {
 			padLocal = localColW + arrowW
 		case sortProto:
 			protoLabel += styledArrow
+		case sortDir:
+			dirLabel += styledArrow
 		case sortState:
 			stateLabel += styledArrow
 		case sortBytes:
@@ -1117,8 +1193,8 @@ func (m Model) viewPeerList(w int) string {
 			localLabel += strings.Repeat(" ", localPad)
 		}
 
-		hdr := fmt.Sprintf("  %s  %s  %-5s  %-11s  %-*s",
-			srcLabel, localLabel, protoLabel, stateLabel, bytesColW, bytesLabel)
+		hdr := fmt.Sprintf("  %s  %s  %-5s  %-3s  %-11s  %-*s",
+			srcLabel, localLabel, protoLabel, dirLabel, stateLabel, bytesColW, bytesLabel)
 		b.WriteString(columnHeaderStyle.Render(hdr))
 		b.WriteString("\n")
 
@@ -1150,10 +1226,22 @@ func (m Model) viewPeerList(w int) string {
 
 			bytesStr := bytesStrs[start+vi]
 
-			row := fmt.Sprintf("  %s  %-*s  %-5s  %s  %-*s",
+			// Direction with color.
+			var dirStr string
+			switch p.Direction {
+			case "in":
+				dirStr = dirInStyle.Render(fmt.Sprintf("%-3s", "IN"))
+			case "out":
+				dirStr = dirOutStyle.Render(fmt.Sprintf("%-3s", "OUT"))
+			default:
+				dirStr = fmt.Sprintf("%-3s", p.Direction)
+			}
+
+			row := fmt.Sprintf("  %s  %-*s  %-5s  %s  %s  %-*s",
 				srcStr,
 				padLocal, local,
 				p.Proto,
+				dirStr,
 				stateStr,
 				bytesColW, bytesStr)
 			b.WriteString(detailPeerStyle.Render(row))
@@ -1194,11 +1282,13 @@ func (m Model) viewPeerList(w int) string {
 			scrollInfo = fmt.Sprintf("  [%d/%d]", m.scroll+1, maxScroll+1)
 		}
 
-		keys := fmt.Sprintf("  %s back  %s scroll  %s sort  %s filter  %s search  %s pause  %s quit%s",
+		keys := fmt.Sprintf("  %s back  %s scroll  %s sort  %s filter  %s dir  %s ip  %s search  %s pause  %s quit%s",
 			statusBarKeyStyle.Render("esc"),
 			statusBarKeyStyle.Render("j/k"),
 			statusBarKeyStyle.Render("s/S"),
 			statusBarKeyStyle.Render("f/F"),
+			statusBarKeyStyle.Render("D"),
+			statusBarKeyStyle.Render("V"),
 			statusBarKeyStyle.Render("/"),
 			statusBarKeyStyle.Render("p"),
 			statusBarKeyStyle.Render("q"),

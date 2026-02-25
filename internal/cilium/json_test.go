@@ -94,6 +94,142 @@ func TestParseJSONCTOutput_FiltersOUT(t *testing.T) {
 	}
 }
 
+func TestParseJSONCTOutput_DirectionOut(t *testing.T) {
+	// For OUT entries, SourceAddr = pod, DestAddr = remote.
+	entries := []ctMapRecord{
+		{
+			Key: ctKey{
+				TupleKey4: &tupleKey4{
+					DestAddr:   encodeIPv4(10, 4, 166, 193), // remote
+					SourceAddr: encodeIPv4(10, 4, 34, 6),    // pod
+					DestPort:   networkPort(5432),            // remote port
+					SourcePort: networkPort(52628),           // pod ephemeral port
+					NextHeader: 6,
+					Flags:      2, // OUT direction (bit 0 not set)
+				},
+			},
+			Value: ctValue{Bytes: 500, Packets: 10},
+		},
+	}
+	data, _ := json.Marshal(entries)
+
+	// Explicit IN filter should exclude this.
+	peers, err := ParseJSONCTOutput(string(data), "10.4.34.6", Filter{Directions: []string{"in"}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(peers) != 0 {
+		t.Fatalf("IN filter should exclude OUT entries, got %d", len(peers))
+	}
+
+	// OUT filter should include it.
+	peers, err = ParseJSONCTOutput(string(data), "10.4.34.6", Filter{
+		Directions: []string{"out"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(peers) != 1 {
+		t.Fatalf("expected 1 OUT peer, got %d", len(peers))
+	}
+	if peers[0].Src != "10.4.166.193:5432" {
+		t.Errorf("Src = %q, want 10.4.166.193:5432", peers[0].Src)
+	}
+	if peers[0].DstPort != 5432 {
+		t.Errorf("DstPort = %d, want 5432", peers[0].DstPort)
+	}
+	if peers[0].Direction != "out" {
+		t.Errorf("Direction = %q, want out", peers[0].Direction)
+	}
+}
+
+func TestParseJSONCTOutput_DirectionAll(t *testing.T) {
+	entries := []ctMapRecord{
+		{
+			// IN entry.
+			Key: ctKey{
+				TupleKey4: &tupleKey4{
+					DestAddr:   encodeIPv4(10, 4, 34, 6),    // pod
+					SourceAddr: encodeIPv4(10, 4, 166, 193), // remote
+					DestPort:   networkPort(4143),
+					SourcePort: networkPort(52628),
+					NextHeader: 6,
+					Flags:      1, // IN
+				},
+			},
+			Value: ctValue{Bytes: 100},
+		},
+		{
+			// OUT entry.
+			Key: ctKey{
+				TupleKey4: &tupleKey4{
+					DestAddr:   encodeIPv4(10, 4, 166, 193), // remote
+					SourceAddr: encodeIPv4(10, 4, 34, 6),    // pod
+					DestPort:   networkPort(52628),
+					SourcePort: networkPort(4143),
+					NextHeader: 6,
+					Flags:      2, // OUT
+				},
+			},
+			Value: ctValue{Bytes: 200},
+		},
+	}
+	data, _ := json.Marshal(entries)
+
+	peers, err := ParseJSONCTOutput(string(data), "10.4.34.6", Filter{
+		Directions: []string{"in", "out"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(peers) != 2 {
+		t.Fatalf("expected 2 peers (IN + OUT), got %d", len(peers))
+	}
+
+	inCount, outCount := 0, 0
+	for _, p := range peers {
+		switch p.Direction {
+		case "in":
+			inCount++
+		case "out":
+			outCount++
+		}
+	}
+	if inCount != 1 || outCount != 1 {
+		t.Errorf("expected 1 IN + 1 OUT, got %d IN + %d OUT", inCount, outCount)
+	}
+}
+
+func TestParseJSONCTOutput_DirectionField(t *testing.T) {
+	entries := []ctMapRecord{
+		{
+			Key: ctKey{
+				TupleKey4: &tupleKey4{
+					DestAddr:   encodeIPv4(10, 4, 34, 6),
+					SourceAddr: encodeIPv4(10, 4, 166, 193),
+					DestPort:   networkPort(4143),
+					SourcePort: networkPort(52628),
+					NextHeader: 6,
+					Flags:      1, // IN
+				},
+			},
+			Value: ctValue{Bytes: 100},
+		},
+	}
+	data, _ := json.Marshal(entries)
+
+	peers, err := ParseJSONCTOutput(string(data), "10.4.34.6", Filter{PortMin: 4143, PortMax: 4143})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(peers) != 1 {
+		t.Fatalf("expected 1 peer, got %d", len(peers))
+	}
+	if peers[0].Direction != "in" {
+		t.Errorf("Direction = %q, want in", peers[0].Direction)
+	}
+}
+
 func TestParseJSONCTOutput_InvalidJSON(t *testing.T) {
 	_, err := ParseJSONCTOutput("not json", "10.4.34.6", Filter{})
 	if err == nil {
@@ -271,7 +407,7 @@ func TestParseJSONCTOutput_SrcCIDRFilter(t *testing.T) {
 func TestParseJSONCTOutput_NilTupleKey4(t *testing.T) {
 	entries := []ctMapRecord{
 		{
-			Key:   ctKey{TupleKey4: nil}, // IPv6 entry, no TupleKey4
+			Key:   ctKey{TupleKey4: nil, TupleKey6: nil},
 			Value: ctValue{Bytes: 100},
 		},
 	}
@@ -282,7 +418,7 @@ func TestParseJSONCTOutput_NilTupleKey4(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(peers) != 0 {
-		t.Fatalf("expected 0 peers for IPv6-only entries, got %d", len(peers))
+		t.Fatalf("expected 0 peers for nil key entries, got %d", len(peers))
 	}
 }
 
@@ -376,5 +512,184 @@ func TestJSONSourceQueryPeers(t *testing.T) {
 	}
 	if peers[0].Bytes != 452 {
 		t.Errorf("Bytes = %d, want 452", peers[0].Bytes)
+	}
+}
+
+func encodeIPv6(ip net.IP) string {
+	b := ip.To16()
+	if b == nil {
+		panic("not a valid IPv6 address")
+	}
+	return base64.StdEncoding.EncodeToString(b)
+}
+
+func TestDecodeIPv6(t *testing.T) {
+	ip := net.ParseIP("f00d::a0f:0:0:4870")
+	encoded := encodeIPv6(ip)
+	decoded, err := decodeIPv6(encoded)
+	if err != nil {
+		t.Fatalf("decodeIPv6 error: %v", err)
+	}
+	if !decoded.Equal(ip) {
+		t.Errorf("decoded = %s, want %s", decoded, ip)
+	}
+}
+
+func TestDecodeIPv6_InvalidBase64(t *testing.T) {
+	_, err := decodeIPv6("!!!not-base64!!!")
+	if err == nil {
+		t.Fatal("expected error for invalid base64")
+	}
+}
+
+func TestDecodeIPv6_WrongLength(t *testing.T) {
+	short := base64.StdEncoding.EncodeToString([]byte{1, 2, 3, 4})
+	_, err := decodeIPv6(short)
+	if err == nil {
+		t.Fatal("expected error for wrong-length data")
+	}
+}
+
+func TestParseJSONCTOutput_IPv6(t *testing.T) {
+	podIP := net.ParseIP("f00d::a0f:0:0:4264")
+	peerIP := net.ParseIP("f00d::a0f:0:0:4870")
+
+	entries := []ctMapRecord{
+		{
+			Key: ctKey{
+				TupleKey6: &tupleKey6{
+					DestAddr:   encodeIPv6(podIP),
+					SourceAddr: encodeIPv6(peerIP),
+					DestPort:   networkPort(80),
+					SourcePort: networkPort(34274),
+					NextHeader: 6,
+					Flags:      1, // IN
+				},
+			},
+			Value: ctValue{
+				Packets:      5,
+				Bytes:        452,
+				Lifetime:     277365,
+				RxFlagsSeen:  0x02,
+				TxFlagsSeen:  0x12,
+				LastRxReport: 277355,
+				LastTxReport: 277355,
+			},
+		},
+	}
+	data, _ := json.Marshal(entries)
+
+	peers, err := ParseJSONCTOutput(string(data), "f00d::a0f:0:0:4264", Filter{PortMin: 80, PortMax: 80})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(peers) != 1 {
+		t.Fatalf("expected 1 peer, got %d", len(peers))
+	}
+	if peers[0].Src != "[f00d::a0f:0:0:4870]:34274" {
+		t.Errorf("Src = %q, want [f00d::a0f:0:0:4870]:34274", peers[0].Src)
+	}
+	if peers[0].DstPort != 80 {
+		t.Errorf("DstPort = %d, want 80", peers[0].DstPort)
+	}
+	if peers[0].IPVersion != "6" {
+		t.Errorf("IPVersion = %q, want 6", peers[0].IPVersion)
+	}
+	if peers[0].Proto != "TCP" {
+		t.Errorf("Proto = %q, want TCP", peers[0].Proto)
+	}
+	if peers[0].Direction != "in" {
+		t.Errorf("Direction = %q, want in", peers[0].Direction)
+	}
+}
+
+func TestParseJSONCTOutput_IPv6Mixed(t *testing.T) {
+	podIPv4 := net.ParseIP("10.4.34.6")
+	podIPv6 := net.ParseIP("f00d::a0f:0:0:4264")
+	peerIPv4 := net.ParseIP("10.4.166.193")
+	peerIPv6 := net.ParseIP("f00d::a0f:0:0:4870")
+
+	entries := []ctMapRecord{
+		{
+			Key: ctKey{
+				TupleKey4: &tupleKey4{
+					DestAddr:   encodeIPv4(podIPv4[12], podIPv4[13], podIPv4[14], podIPv4[15]),
+					SourceAddr: encodeIPv4(peerIPv4[12], peerIPv4[13], peerIPv4[14], peerIPv4[15]),
+					DestPort:   networkPort(4143),
+					SourcePort: networkPort(52628),
+					NextHeader: 6,
+					Flags:      1,
+				},
+			},
+			Value: ctValue{Bytes: 100},
+		},
+		{
+			Key: ctKey{
+				TupleKey6: &tupleKey6{
+					DestAddr:   encodeIPv6(podIPv6),
+					SourceAddr: encodeIPv6(peerIPv6),
+					DestPort:   networkPort(80),
+					SourcePort: networkPort(34274),
+					NextHeader: 6,
+					Flags:      1,
+				},
+			},
+			Value: ctValue{Bytes: 200},
+		},
+	}
+	data, _ := json.Marshal(entries)
+
+	// Parse for v4 pod.
+	v4Peers, err := ParseJSONCTOutput(string(data), "10.4.34.6", Filter{})
+	if err != nil {
+		t.Fatalf("v4 error: %v", err)
+	}
+	if len(v4Peers) != 1 {
+		t.Fatalf("expected 1 v4 peer, got %d", len(v4Peers))
+	}
+	if v4Peers[0].IPVersion != "4" {
+		t.Errorf("IPVersion = %q, want 4", v4Peers[0].IPVersion)
+	}
+
+	// Parse for v6 pod.
+	v6Peers, err := ParseJSONCTOutput(string(data), "f00d::a0f:0:0:4264", Filter{})
+	if err != nil {
+		t.Fatalf("v6 error: %v", err)
+	}
+	if len(v6Peers) != 1 {
+		t.Fatalf("expected 1 v6 peer, got %d", len(v6Peers))
+	}
+	if v6Peers[0].IPVersion != "6" {
+		t.Errorf("IPVersion = %q, want 6", v6Peers[0].IPVersion)
+	}
+}
+
+func TestParseJSONCTOutput_IPv4HasIPVersion(t *testing.T) {
+	entries := []ctMapRecord{
+		{
+			Key: ctKey{
+				TupleKey4: &tupleKey4{
+					DestAddr:   encodeIPv4(10, 4, 34, 6),
+					SourceAddr: encodeIPv4(10, 4, 166, 193),
+					DestPort:   networkPort(4143),
+					SourcePort: networkPort(52628),
+					NextHeader: 6,
+					Flags:      1,
+				},
+			},
+			Value: ctValue{Bytes: 100},
+		},
+	}
+	data, _ := json.Marshal(entries)
+
+	peers, err := ParseJSONCTOutput(string(data), "10.4.34.6", Filter{PortMin: 4143, PortMax: 4143})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(peers) != 1 {
+		t.Fatalf("expected 1 peer, got %d", len(peers))
+	}
+	if peers[0].IPVersion != "4" {
+		t.Errorf("IPVersion = %q, want 4", peers[0].IPVersion)
 	}
 }
