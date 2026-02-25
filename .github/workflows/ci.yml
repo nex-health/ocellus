@@ -47,7 +47,7 @@ jobs:
         run: go install sigs.k8s.io/kind@v0.31.0
 
       - name: Install Helm
-        uses: azure/setup-helm@bf6a7d304bc2fdb57e0331155b7ebf2c504acf0a # v4
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
 
       - name: Create cluster and install Cilium
         run: ./test/e2e/setup.sh up
