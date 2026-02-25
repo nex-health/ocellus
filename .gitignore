@@ -1,0 +1,24 @@
+# Binary
+ocellus
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test/coverage
+coverage.out
+*.test
+
+# Env
+.env
+.env.*
+
+# Claude
+.claude/

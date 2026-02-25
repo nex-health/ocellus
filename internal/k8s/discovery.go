@@ -27,7 +27,7 @@ func DiscoverPods(ctx context.Context, client KubeClient, namespace string, targ
 		return discoverSinglePod(ctx, client, namespace, target.Name)
 	case "deployment":
 		return discoverDeploymentPods(ctx, client, namespace, target.Name)
-	case "statefulset", "daemonset":
+	case "replicaset", "statefulset", "daemonset":
 		return discoverOwnedPods(ctx, client, namespace, target.Kind, target.Name)
 	default:
 		return nil, fmt.Errorf("unsupported kind: %s", target.Kind)
@@ -105,6 +105,8 @@ func listRunningPodsOwnedBy(ctx context.Context, client KubeClient, namespace, o
 
 func kindToOwnerKind(kind string) string {
 	switch kind {
+	case "replicaset":
+		return "ReplicaSet"
 	case "statefulset":
 		return "StatefulSet"
 	case "daemonset":

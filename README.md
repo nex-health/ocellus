@@ -2,6 +2,17 @@
 
 A TUI tool for monitoring TCP connections to Kubernetes pods via Cilium's BPF conntrack tables.
 
+## Motivation
+
+In Kubernetes clusters running Cilium, there is no easy way to answer the question: "who is connected to my pods right now?" Existing tools either show flow event streams (Hubble CLI), require a full observability stack (Pixie, Kubeshark), or only work one pod at a time (`kubectl exec` + `ss`).
+
+Ocellus fills this gap by reading Cilium's kernel-level BPF conntrack tables directly from the Cilium agent, giving you a real-time, multi-pod dashboard of current connection state — all from the terminal, with no extra infrastructure and no tools required inside target pods.
+
+Typical use cases:
+- Monitoring connection distribution across database or service replicas
+- Detecting connection leaks or imbalances between pod instances
+- Quick operational checks ("how many clients are connected right now?") without leaving the terminal
+
 ## Usage
 
 ```

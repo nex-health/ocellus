@@ -35,6 +35,9 @@ func NewClient(kubeconfig string) (*Client, error) {
 		return nil, fmt.Errorf("load kubeconfig: %w", err)
 	}
 
+	config.QPS = 50
+	config.Burst = 100
+
 	cs, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return nil, fmt.Errorf("create kubernetes client: %w", err)
