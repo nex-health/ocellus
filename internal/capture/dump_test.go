@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aurelcanciu/ocellus/internal/cilium"
+	"github.com/nex-health/ocellus/internal/cilium"
 )
 
 func TestDumpOnce(t *testing.T) {

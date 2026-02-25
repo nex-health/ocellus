@@ -6,9 +6,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/aurelcanciu/ocellus/internal/cilium"
-	"github.com/aurelcanciu/ocellus/internal/k8s"
-	"github.com/aurelcanciu/ocellus/internal/poll"
+	"github.com/nex-health/ocellus/internal/cilium"
+	"github.com/nex-health/ocellus/internal/k8s"
+	"github.com/nex-health/ocellus/internal/poll"
 )
 
 // ClusterClient combines the interfaces needed for polling.

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/aurelcanciu/ocellus/internal/cilium"
+	"github.com/nex-health/ocellus/internal/cilium"
 )
 
 // Diff compares two snapshots and returns events describing changes.

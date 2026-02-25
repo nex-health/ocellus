@@ -3,7 +3,7 @@ package capture
 import (
 	"time"
 
-	"github.com/aurelcanciu/ocellus/internal/cilium"
+	"github.com/nex-health/ocellus/internal/cilium"
 )
 
 // Snapshot represents the complete connection state at a moment in time.

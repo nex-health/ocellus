@@ -10,8 +10,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/aurelcanciu/ocellus/internal/cilium"
-	"github.com/aurelcanciu/ocellus/internal/k8s"
+	"github.com/nex-health/ocellus/internal/cilium"
+	"github.com/nex-health/ocellus/internal/k8s"
 )
 
 type mockClient struct {

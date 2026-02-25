@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aurelcanciu/ocellus/internal/capture"
-	"github.com/aurelcanciu/ocellus/internal/cilium"
-	"github.com/aurelcanciu/ocellus/internal/k8s"
+	"github.com/nex-health/ocellus/internal/capture"
+	"github.com/nex-health/ocellus/internal/cilium"
+	"github.com/nex-health/ocellus/internal/k8s"
 )
 
 // Params holds the parameters for a single poll cycle.

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aurelcanciu/ocellus/internal/cilium"
-	"github.com/aurelcanciu/ocellus/internal/k8s"
+	"github.com/nex-health/ocellus/internal/cilium"
+	"github.com/nex-health/ocellus/internal/k8s"
 )
 
 // runOcellus runs the ocellus binary with the given args and a short timeout.

@@ -15,21 +15,21 @@ Typical use cases:
 
 ## Installation
 
-Download the latest binary for your platform from the [Releases](https://github.com/aurelcanciu/ocellus/releases) page:
+Download the latest binary for your platform from the [Releases](https://github.com/nex-health/ocellus/releases) page:
 
 ```sh
 # macOS (Apple Silicon)
-curl -Lo ocellus https://github.com/aurelcanciu/ocellus/releases/latest/download/ocellus-darwin-arm64
+curl -Lo ocellus https://github.com/nex-health/ocellus/releases/latest/download/ocellus-darwin-arm64
 chmod +x ocellus
 sudo mv ocellus /usr/local/bin/
 
 # macOS (Intel)
-curl -Lo ocellus https://github.com/aurelcanciu/ocellus/releases/latest/download/ocellus-darwin-amd64
+curl -Lo ocellus https://github.com/nex-health/ocellus/releases/latest/download/ocellus-darwin-amd64
 chmod +x ocellus
 sudo mv ocellus /usr/local/bin/
 
 # Linux (amd64)
-curl -Lo ocellus https://github.com/aurelcanciu/ocellus/releases/latest/download/ocellus-linux-amd64
+curl -Lo ocellus https://github.com/nex-health/ocellus/releases/latest/download/ocellus-linux-amd64
 chmod +x ocellus
 sudo mv ocellus /usr/local/bin/
 ```
@@ -37,7 +37,7 @@ sudo mv ocellus /usr/local/bin/
 Or install with Go 1.26+:
 
 ```sh
-go install github.com/aurelcanciu/ocellus@latest
+go install github.com/nex-health/ocellus@latest
 ```
 
 ## Usage

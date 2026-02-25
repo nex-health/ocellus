@@ -13,11 +13,11 @@ import (
 	flag "github.com/spf13/pflag"
 	"k8s.io/klog/v2"
 
-	"github.com/aurelcanciu/ocellus/internal/capture"
-	"github.com/aurelcanciu/ocellus/internal/cilium"
-	"github.com/aurelcanciu/ocellus/internal/k8s"
-	"github.com/aurelcanciu/ocellus/internal/poll"
-	"github.com/aurelcanciu/ocellus/internal/tui"
+	"github.com/nex-health/ocellus/internal/capture"
+	"github.com/nex-health/ocellus/internal/cilium"
+	"github.com/nex-health/ocellus/internal/k8s"
+	"github.com/nex-health/ocellus/internal/poll"
+	"github.com/nex-health/ocellus/internal/tui"
 )
 
 var version = "dev"

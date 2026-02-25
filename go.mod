@@ -1,4 +1,4 @@
-module github.com/aurelcanciu/ocellus
+module github.com/nex-health/ocellus
 
 go 1.26.0
 
