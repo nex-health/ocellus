@@ -11,17 +11,17 @@ import (
 // Peer represents a conntrack peer with its source address and the destination
 // port on the pod it is connected to.
 type Peer struct {
-	Src          string `json:"src"`            // e.g. "10.4.166.193:52628"
-	DstPort      int    `json:"dst_port"`       // destination port on the pod
-	Proto        string `json:"proto"`          // "TCP" or "UDP"
-	State        string `json:"state"`          // "established" or "closing"
-	Bytes        uint64 `json:"bytes"`          // total bytes (RxBytes+TxBytes or Bytes)
-	Packets      uint64 `json:"packets"`        // total packets (RxPackets+TxPackets or Packets)
+	Src          string `json:"src"`      // e.g. "10.4.166.193:52628"
+	DstPort      int    `json:"dst_port"` // destination port on the pod
+	Proto        string `json:"proto"`    // "TCP" or "UDP"
+	State        string `json:"state"`    // "established" or "closing"
+	Bytes        uint64 `json:"bytes"`    // total bytes (RxBytes+TxBytes or Bytes)
+	Packets      uint64 `json:"packets"`  // total packets (RxPackets+TxPackets or Packets)
 	RxBytes      uint64 `json:"rx_bytes"`
 	TxBytes      uint64 `json:"tx_bytes"`
 	RxPackets    uint64 `json:"rx_packets"`
 	TxPackets    uint64 `json:"tx_packets"`
-	Expires      uint32 `json:"expires"`        // kernel time until GC (ms)
+	Expires      uint32 `json:"expires"` // kernel time until GC (ms)
 	LastRxReport uint32 `json:"last_rx_report"`
 	LastTxReport uint32 `json:"last_tx_report"`
 	RxFlagsSeen  uint8  `json:"rx_flags_seen"`
@@ -87,7 +87,7 @@ func NewFilter(opts FilterOpts) (Filter, error) {
 	if proto == "" {
 		proto = "tcp"
 	}
-	for _, p := range strings.Split(proto, ",") {
+	for p := range strings.SplitSeq(proto, ",") {
 		p = strings.ToUpper(strings.TrimSpace(p))
 		if p != "" {
 			f.Protos = append(f.Protos, p)
@@ -119,7 +119,7 @@ func NewFilter(opts FilterOpts) (Filter, error) {
 	if state == "" {
 		state = "established"
 	}
-	for _, s := range strings.Split(state, ",") {
+	for s := range strings.SplitSeq(state, ",") {
 		s = strings.ToLower(strings.TrimSpace(s))
 		if s != "" {
 			f.States = append(f.States, s)
@@ -249,7 +249,7 @@ func ParseCTOutput(output string, podIP string, filter Filter) []Peer {
 	seen := make(map[string]bool)
 	var peers []Peer
 
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		// 1. Protocol + direction prefix.
 		matchedProto := false
 		for _, pfx := range prefixes {

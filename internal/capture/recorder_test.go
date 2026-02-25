@@ -31,7 +31,7 @@ func TestRecorderDumpSnapshot(t *testing.T) {
 	if output == "" {
 		t.Fatal("expected output")
 	}
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &parsed); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestRecorderContinuousRecording(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
 	snapshotCount := 0
 	for _, line := range lines {
-		var parsed map[string]interface{}
+		var parsed map[string]any
 		if err := json.Unmarshal([]byte(line), &parsed); err == nil {
 			if parsed["type"] == "snapshot" {
 				snapshotCount++
@@ -98,7 +98,7 @@ func TestRecorderEventsEmitted(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
 	eventFound := false
 	for _, line := range lines {
-		var parsed map[string]interface{}
+		var parsed map[string]any
 		if err := json.Unmarshal([]byte(line), &parsed); err == nil {
 			if parsed["type"] == "event" {
 				eventFound = true

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 	"time"
@@ -86,48 +87,48 @@ type pendingKeyTimeoutMsg struct{}
 
 // Config holds the parameters for the TUI.
 type Config struct {
-	Filter      cilium.Filter
-	Namespace   string
-	Context     string // kubeconfig context name
-	Target      k8s.Target
-	Interval    time.Duration
-	PollTimeout time.Duration // 0 = no timeout
-	Client      ClusterClient
-	Source      cilium.ConntrackSource
-	Pods        []k8s.PodInfo
+	Filter       cilium.Filter
+	Namespace    string
+	Context      string // kubeconfig context name
+	Target       k8s.Target
+	Interval     time.Duration
+	PollTimeout  time.Duration // 0 = no timeout
+	Client       ClusterClient
+	Source       cilium.ConntrackSource
+	Pods         []k8s.PodInfo
 	OutputFormat string // capture format: "jsonl", "json", "csv", "text"
 	OutputFile   string // capture file path (empty = auto-generated)
 }
 
 // Model is the Bubble Tea model for the ocellus TUI.
 type Model struct {
-	config      Config
-	width       int
-	height      int
-	mode        viewMode
-	cursor      int // selected pod index
-	podScroll   int // scroll offset in pod list
-	scroll      int // scroll offset in peer view
-	peers       map[string][]cilium.Peer
-	exited      map[string]bool
-	timestamp   time.Time
-	polling     bool
-	paused      bool // polling paused due to user navigation
-	quitting    bool
-	sortField   sortField
-	sortReverse bool
-	stateFilter stateFilter
-	protoFilter protoFilter
-	searching   bool
-	searchQuery string
-	showHelp   bool
+	config         Config
+	width          int
+	height         int
+	mode           viewMode
+	cursor         int // selected pod index
+	podScroll      int // scroll offset in pod list
+	scroll         int // scroll offset in peer view
+	peers          map[string][]cilium.Peer
+	exited         map[string]bool
+	timestamp      time.Time
+	polling        bool
+	paused         bool // polling paused due to user navigation
+	quitting       bool
+	sortField      sortField
+	sortReverse    bool
+	stateFilter    stateFilter
+	protoFilter    protoFilter
+	searching      bool
+	searchQuery    string
+	showHelp       bool
 	lastErrors     []string
 	pendingKey     string // for multi-key chords like "gg"
 	prevTotalBytes uint64
 	bytesPerSec    uint64
-	recorder    *capture.Recorder
-	dumpStatus  string    // status message shown briefly after dump
-	dumpStatusT time.Time // when dumpStatus was set
+	recorder       *capture.Recorder
+	dumpStatus     string    // status message shown briefly after dump
+	dumpStatusT    time.Time // when dumpStatus was set
 }
 
 // New creates a new Model from the given config.
@@ -189,8 +190,8 @@ func errorSummary(errors []string) string {
 	reasons := make(map[string]int)
 	for _, e := range errors {
 		reason := e
-		if idx := strings.Index(e, ": "); idx >= 0 {
-			reason = e[idx+2:]
+		if _, after, ok := strings.Cut(e, ": "); ok {
+			reason = after
 		}
 		reasons[reason]++
 	}
@@ -210,9 +211,7 @@ func errorSummary(errors []string) string {
 func (m Model) startPoll() tea.Cmd {
 	// Copy exited to avoid sharing mutable state with the poll goroutine.
 	exitedCopy := make(map[string]bool, len(m.exited))
-	for k, v := range m.exited {
-		exitedCopy[k] = v
-	}
+	maps.Copy(exitedCopy, m.exited)
 	return pollCmd(m.config.Client, m.config.Source, m.config.Namespace, m.config.Target, m.config.Filter, m.pollTargets(), exitedCopy, m.config.PollTimeout)
 }
 
@@ -247,9 +246,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pollResultMsg:
 		m.polling = false
 		m.lastErrors = msg.errors
-		for name, p := range msg.peers {
-			m.peers[name] = p
-		}
+		maps.Copy(m.peers, msg.peers)
 		for name := range msg.exited {
 			m.exited[name] = true
 		}
@@ -369,10 +366,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // podPaneHeight returns lines available for pod rows in the pod list view.
 // Layout: header(1) + divider(1) + [pod rows] + status(1)
 func (m Model) podPaneHeight() int {
-	h := m.height - 4 // header + divider + bottom divider + status
-	if h < 1 {
-		h = 1
-	}
+	h := max(
+		// header + divider + bottom divider + status
+		m.height-4, 1)
 	return h
 }
 
@@ -388,10 +384,7 @@ func (m *Model) clampPodScroll() {
 		m.podScroll = m.cursor - paneH + 1
 	}
 	// Don't scroll past the end.
-	maxScroll := len(m.config.Pods) - paneH
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
+	maxScroll := max(len(m.config.Pods)-paneH, 0)
 	if m.podScroll > maxScroll {
 		m.podScroll = maxScroll
 	}
@@ -417,10 +410,7 @@ func (m Model) updatePodList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pendingKey = "g"
 		return m, pendingKeyTimeout()
 	case "G":
-		m.cursor = len(m.config.Pods) - 1
-		if m.cursor < 0 {
-			m.cursor = 0
-		}
+		m.cursor = max(len(m.config.Pods)-1, 0)
 		m.clampPodScroll()
 		return m, nil
 	case "ctrl+d":
@@ -732,10 +722,7 @@ func sortPeers(peers []cilium.Peer, field sortField, reverse bool) []cilium.Peer
 // Layout: header(1) + divider(1) + subheader(1) + column header(1) + [peer rows] + status(1)
 func (m Model) peerPaneHeight() int {
 	fixed := 1 + 1 + 1 + 1 + 1 + 1 // header + divider + subheader + col header + bottom divider + status
-	h := m.height - fixed
-	if h < 1 {
-		h = 1
-	}
+	h := max(m.height-fixed, 1)
 	return h
 }
 
@@ -752,10 +739,7 @@ func (m Model) selectedPeers() []cilium.Peer {
 // maxScroll returns the maximum valid scroll value for the peer view.
 func (m Model) maxScroll() int {
 	peers := m.selectedPeers()
-	limit := len(peers) - m.peerPaneHeight()
-	if limit < 0 {
-		limit = 0
-	}
+	limit := max(len(peers)-m.peerPaneHeight(), 0)
 	return limit
 }
 
@@ -842,10 +826,7 @@ func (m Model) viewHelp(w int) string {
 	b.WriteString("\n")
 
 	keys := fmt.Sprintf("  %s close help", statusBarKeyStyle.Render("?"))
-	padLen := w - lipgloss.Width(keys) - 2
-	if padLen < 0 {
-		padLen = 0
-	}
+	padLen := max(w-lipgloss.Width(keys)-2, 0)
 	b.WriteString(statusBarStyle.Width(w).Render(keys + strings.Repeat(" ", padLen)))
 
 	return b.String()
@@ -931,10 +912,7 @@ func (m Model) viewPodList(w int) string {
 	// Pod table rows (scrollable).
 	paneH := m.podPaneHeight()
 	start := m.podScroll
-	end := start + paneH
-	if end > len(m.config.Pods) {
-		end = len(m.config.Pods)
-	}
+	end := min(start+paneH, len(m.config.Pods))
 
 	for i := start; i < end; i++ {
 		p := m.config.Pods[i]
@@ -1025,10 +1003,7 @@ func (m Model) viewPodList(w int) string {
 		statusBarKeyStyle.Render("d"),
 		statusBarKeyStyle.Render("R"),
 		statusBarKeyStyle.Render("?"))
-	padLen := w - lipgloss.Width(keys) - lipgloss.Width(statusIndicator) - 2
-	if padLen < 0 {
-		padLen = 0
-	}
+	padLen := max(w-lipgloss.Width(keys)-lipgloss.Width(statusIndicator)-2, 0)
 	statusText := keys + strings.Repeat(" ", padLen) + statusIndicator
 	b.WriteString(statusBarStyle.Width(w).Render(statusText))
 
@@ -1148,14 +1123,8 @@ func (m Model) viewPeerList(w int) string {
 
 		// Data rows (scrollable).
 		paneH := m.peerPaneHeight()
-		start := m.scroll
-		if start > len(peers) {
-			start = len(peers)
-		}
-		end := start + paneH
-		if end > len(peers) {
-			end = len(peers)
-		}
+		start := min(m.scroll, len(peers))
+		end := min(start+paneH, len(peers))
 		visible := peers[start:end]
 		for vi, p := range visible {
 			local := fmt.Sprintf("%s:%d", selected.IP, p.DstPort)
@@ -1202,10 +1171,7 @@ func (m Model) viewPeerList(w int) string {
 	// Status bar.
 	if m.searching {
 		searchText := fmt.Sprintf("  /%s_", m.searchQuery)
-		padLen := w - lipgloss.Width(searchText) - 2
-		if padLen < 0 {
-			padLen = 0
-		}
+		padLen := max(w-lipgloss.Width(searchText)-2, 0)
 		b.WriteString(searchBarStyle.Width(w).Render(searchText + strings.Repeat(" ", padLen)))
 	} else {
 		var statusIndicator string
@@ -1236,10 +1202,7 @@ func (m Model) viewPeerList(w int) string {
 			statusBarKeyStyle.Render("p"),
 			statusBarKeyStyle.Render("q"),
 			scrollInfo)
-		padLen := w - lipgloss.Width(keys) - lipgloss.Width(statusIndicator) - 2
-		if padLen < 0 {
-			padLen = 0
-		}
+		padLen := max(w-lipgloss.Width(keys)-lipgloss.Width(statusIndicator)-2, 0)
 		statusText := keys + strings.Repeat(" ", padLen) + statusIndicator
 		b.WriteString(statusBarStyle.Width(w).Render(statusText))
 	}

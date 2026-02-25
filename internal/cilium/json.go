@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"slices"
 	"sort"
 )
 
@@ -108,13 +109,7 @@ func ParseJSONCTOutput(data string, podIP string, filter Filter) ([]Peer, error)
 		default:
 			continue
 		}
-		matchedProto := false
-		for _, p := range protos {
-			if p == proto {
-				matchedProto = true
-				break
-			}
-		}
+		matchedProto := slices.Contains(protos, proto)
 		if !matchedProto {
 			continue
 		}

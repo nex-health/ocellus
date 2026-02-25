@@ -3,6 +3,7 @@ package cilium
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 )
@@ -33,10 +34,8 @@ func TestAutoSourceFallsBackToText(t *testing.T) {
 		execFn: func(_, _, _ string, cmd []string) (string, error) {
 			callCount++
 			// First call with -o json fails (old Cilium).
-			for _, arg := range cmd {
-				if arg == "json" {
-					return "", fmt.Errorf("unknown flag: -o")
-				}
+			if slices.Contains(cmd, "json") {
+				return "", fmt.Errorf("unknown flag: -o")
 			}
 			// Second call without -o json succeeds.
 			return sampleCTOutput, nil
@@ -61,11 +60,9 @@ func TestAutoSourceFallsBackWhenJSONReturnsZeroPeers(t *testing.T) {
 	client := &mockPodExecer{
 		execFn: func(_, _, _ string, cmd []string) (string, error) {
 			callCount++
-			for _, arg := range cmd {
-				if arg == "json" {
-					// JSON succeeds but returns empty array (format mismatch).
-					return "[]", nil
-				}
+			if slices.Contains(cmd, "json") {
+				// JSON succeeds but returns empty array (format mismatch).
+				return "[]", nil
 			}
 			return sampleCTOutput, nil
 		},
@@ -118,10 +115,8 @@ func TestAutoSourceRemembersPreference(t *testing.T) {
 	client := &mockPodExecer{
 		execFn: func(_, _, _ string, cmd []string) (string, error) {
 			callCount++
-			for _, arg := range cmd {
-				if arg == "json" {
-					return "", fmt.Errorf("unknown flag: -o")
-				}
+			if slices.Contains(cmd, "json") {
+				return "", fmt.Errorf("unknown flag: -o")
 			}
 			return sampleCTOutput, nil
 		},
@@ -142,22 +137,18 @@ func TestAutoSourceRemembersPreference(t *testing.T) {
 func TestAutoSourceConcurrentAccess(t *testing.T) {
 	client := &mockPodExecer{
 		execFn: func(_, _, _ string, cmd []string) (string, error) {
-			for _, arg := range cmd {
-				if arg == "json" {
-					return "", fmt.Errorf("no json")
-				}
+			if slices.Contains(cmd, "json") {
+				return "", fmt.Errorf("no json")
 			}
 			return sampleCTOutput, nil
 		},
 	}
 	src := NewAutoSource()
 	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 10 {
+		wg.Go(func() {
 			_, _ = src.QueryPeers(context.Background(), client, "cilium-abc", []string{"10.4.34.6"}, Filter{PortMin: 4143, PortMax: 4143})
-		}()
+		})
 	}
 	wg.Wait()
 }

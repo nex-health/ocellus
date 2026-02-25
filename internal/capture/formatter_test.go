@@ -41,7 +41,7 @@ func TestJSONLFormatterSnapshot(t *testing.T) {
 	if !strings.HasSuffix(s, "\n") {
 		t.Error("JSONL output should end with newline")
 	}
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	if err := json.Unmarshal([]byte(strings.TrimSpace(s)), &parsed); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestJSONLFormatterEvent(t *testing.T) {
 	if !strings.HasSuffix(s, "\n") {
 		t.Error("JSONL output should end with newline")
 	}
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	if err := json.Unmarshal([]byte(strings.TrimSpace(s)), &parsed); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestJSONFormatterSnapshot(t *testing.T) {
 	if !strings.HasSuffix(s, "\n") {
 		t.Error("JSON output should end with newline")
 	}
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestJSONFormatterEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FormatEvent error: %v", err)
 	}
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}

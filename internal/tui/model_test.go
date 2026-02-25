@@ -250,7 +250,7 @@ func TestPeerViewScrolling(t *testing.T) {
 	m.mode = viewPeers
 
 	var peers []cilium.Peer
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		peers = append(peers, cilium.Peer{
 			Src:     fmt.Sprintf("10.1.0.%d:%d", i, 1000+i),
 			DstPort: 5432,
@@ -286,7 +286,7 @@ func TestPeerViewPageUpDown(t *testing.T) {
 	m.height = 12
 	m.mode = viewPeers
 	var peers []cilium.Peer
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		peers = append(peers, cilium.Peer{
 			Src:     fmt.Sprintf("10.1.0.%d:%d", i, 1000+i),
 			DstPort: 5432,
@@ -316,7 +316,7 @@ func TestPeerViewHomeEnd(t *testing.T) {
 	m.height = 12
 	m.mode = viewPeers
 	var peers []cilium.Peer
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		peers = append(peers, cilium.Peer{
 			Src:     fmt.Sprintf("10.1.0.%d:%d", i, 1000+i),
 			DstPort: 5432,
@@ -346,7 +346,7 @@ func TestNavigationPausesPolling(t *testing.T) {
 	m := testModel()
 	m.mode = viewPeers
 	var peers []cilium.Peer
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		peers = append(peers, cilium.Peer{
 			Src:     fmt.Sprintf("10.1.0.%d:%d", i, 1000+i),
 			DstPort: 5432,
@@ -812,7 +812,7 @@ func TestSortChangeResetsScroll(t *testing.T) {
 	m.height = 12
 	m.mode = viewPeers
 	var peers []cilium.Peer
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		peers = append(peers, cilium.Peer{
 			Src:     fmt.Sprintf("10.1.0.%d:%d", i, 1000+i),
 			DstPort: 5432,
@@ -983,7 +983,7 @@ func TestGGJumpsToTopPeerView(t *testing.T) {
 	m.height = 12
 	m.mode = viewPeers
 	var peers []cilium.Peer
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		peers = append(peers, cilium.Peer{
 			Src:     fmt.Sprintf("10.1.0.%d:%d", i, 1000+i),
 			DstPort: 5432,
@@ -1008,7 +1008,7 @@ func TestGJumpsToBottomPeerView(t *testing.T) {
 	m.height = 12
 	m.mode = viewPeers
 	var peers []cilium.Peer
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		peers = append(peers, cilium.Peer{
 			Src:     fmt.Sprintf("10.1.0.%d:%d", i, 1000+i),
 			DstPort: 5432,
@@ -1130,7 +1130,7 @@ func TestCtrlDHalfPageDownPeerView(t *testing.T) {
 	m.height = 12
 	m.mode = viewPeers
 	var peers []cilium.Peer
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		peers = append(peers, cilium.Peer{
 			Src:     fmt.Sprintf("10.1.0.%d:%d", i, 1000+i),
 			DstPort: 5432,
@@ -1199,7 +1199,7 @@ func TestHMLPeerView(t *testing.T) {
 	m.height = 12
 	m.mode = viewPeers
 	var peers []cilium.Peer
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		peers = append(peers, cilium.Peer{
 			Src:     fmt.Sprintf("10.1.0.%d:%d", i, 1000+i),
 			DstPort: 5432,
@@ -1311,7 +1311,7 @@ func TestCtrlUHalfPageUpPeerView(t *testing.T) {
 	m.height = 12
 	m.mode = viewPeers
 	var peers []cilium.Peer
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		peers = append(peers, cilium.Peer{
 			Src:     fmt.Sprintf("10.1.0.%d:%d", i, 1000+i),
 			DstPort: 5432,
@@ -1323,10 +1323,7 @@ func TestCtrlUHalfPageUpPeerView(t *testing.T) {
 	updated, _ := m.Update(keyMsg("ctrl+u"))
 	m2 := updated.(Model)
 	halfPage := m2.peerPaneHeight() / 2
-	expected := 15 - halfPage
-	if expected < 0 {
-		expected = 0
-	}
+	expected := max(15-halfPage, 0)
 	if m2.scroll != expected {
 		t.Errorf("scroll = %d after ctrl+u, want %d", m2.scroll, expected)
 	}
@@ -1923,7 +1920,7 @@ func TestViewPeerListScrollInfo(t *testing.T) {
 	m.height = 12
 	m.mode = viewPeers
 	var peers []cilium.Peer
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		peers = append(peers, cilium.Peer{
 			Src:     fmt.Sprintf("10.1.0.%d:%d", i, 1000+i),
 			DstPort: 5432,
@@ -2006,7 +2003,7 @@ func runeIndex(runes []rune, substr string) int {
 	target := []rune(substr)
 	for i := 0; i <= len(runes)-len(target); i++ {
 		match := true
-		for j := 0; j < len(target); j++ {
+		for j := range target {
 			if runes[i+j] != target[j] {
 				match = false
 				break
@@ -2091,7 +2088,7 @@ func TestPeerViewGPausesBehavior(t *testing.T) {
 	m.height = 12
 	m.mode = viewPeers
 	var peers []cilium.Peer
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		peers = append(peers, cilium.Peer{
 			Src:     fmt.Sprintf("10.1.0.%d:%d", i, 1000+i),
 			DstPort: 5432,
