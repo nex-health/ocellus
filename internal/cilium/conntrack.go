@@ -11,21 +11,21 @@ import (
 // Peer represents a conntrack peer with its source address and the destination
 // port on the pod it is connected to.
 type Peer struct {
-	Src          string // e.g. "10.4.166.193:52628"
-	DstPort      int    // destination port on the pod
-	Proto        string // "TCP" or "UDP"
-	State        string // "established" or "closing"
-	Bytes        uint64 // total bytes (RxBytes+TxBytes or Bytes)
-	Packets      uint64 // total packets (RxPackets+TxPackets or Packets)
-	RxBytes      uint64
-	TxBytes      uint64
-	RxPackets    uint64
-	TxPackets    uint64
-	Expires      uint32 // kernel time until GC (ms)
-	LastRxReport uint32
-	LastTxReport uint32
-	RxFlagsSeen  uint8
-	TxFlagsSeen  uint8
+	Src          string `json:"src"`            // e.g. "10.4.166.193:52628"
+	DstPort      int    `json:"dst_port"`       // destination port on the pod
+	Proto        string `json:"proto"`          // "TCP" or "UDP"
+	State        string `json:"state"`          // "established" or "closing"
+	Bytes        uint64 `json:"bytes"`          // total bytes (RxBytes+TxBytes or Bytes)
+	Packets      uint64 `json:"packets"`        // total packets (RxPackets+TxPackets or Packets)
+	RxBytes      uint64 `json:"rx_bytes"`
+	TxBytes      uint64 `json:"tx_bytes"`
+	RxPackets    uint64 `json:"rx_packets"`
+	TxPackets    uint64 `json:"tx_packets"`
+	Expires      uint32 `json:"expires"`        // kernel time until GC (ms)
+	LastRxReport uint32 `json:"last_rx_report"`
+	LastTxReport uint32 `json:"last_tx_report"`
+	RxFlagsSeen  uint8  `json:"rx_flags_seen"`
+	TxFlagsSeen  uint8  `json:"tx_flags_seen"`
 }
 
 // Filter controls which conntrack entries are included.

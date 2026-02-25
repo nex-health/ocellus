@@ -215,3 +215,27 @@ func TestNewFormatterInvalid(t *testing.T) {
 		t.Error("NewFormatter(xml) should return error")
 	}
 }
+
+func TestJSONLSnapshotContainsPeerFields(t *testing.T) {
+	f := &JSONLFormatter{}
+	snap := Snapshot{
+		Timestamp: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
+		Pods: map[string][]cilium.Peer{
+			"pod-1": {{
+				Src: "10.0.0.1:1000", DstPort: 5432, Proto: "TCP",
+				State: "established", Bytes: 1024, RxBytes: 512, TxBytes: 512,
+			}},
+		},
+	}
+	data, _ := f.FormatSnapshot(snap)
+	s := string(data)
+	if !strings.Contains(s, `"src"`) {
+		t.Error("JSON should contain src field")
+	}
+	if !strings.Contains(s, `"dst_port"`) {
+		t.Error("JSON should contain dst_port field")
+	}
+	if !strings.Contains(s, `"rx_bytes"`) {
+		t.Error("JSON should contain rx_bytes field")
+	}
+}
