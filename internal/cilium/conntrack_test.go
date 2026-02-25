@@ -275,6 +275,44 @@ func TestParseCTOutput_RichFields(t *testing.T) {
 	}
 }
 
+func TestParseCTOutput_SplitFieldFormat(t *testing.T) {
+	// Uses RxPackets/TxPackets/RxBytes/TxBytes format (newer Cilium).
+	output := `TCP IN 10.0.0.1:1000 -> 10.1.0.1:5432 expires=100 RxPackets=3 RxBytes=300 RxFlagsSeen=0x02 LastRxReport=90 TxPackets=7 TxBytes=1400 TxFlagsSeen=0x12 LastTxReport=95 Flags=0x0012 [ SeenNonSyn ] RevNAT=0 SourceSecurityID=6 IfIndex=0
+`
+	peers := ParseCTOutput(output, "10.1.0.1", Filter{PortMin: 5432, PortMax: 5432})
+	if len(peers) != 1 {
+		t.Fatalf("expected 1 peer, got %d", len(peers))
+	}
+	p := peers[0]
+	if p.RxBytes != 300 {
+		t.Errorf("RxBytes = %d, want 300", p.RxBytes)
+	}
+	if p.TxBytes != 1400 {
+		t.Errorf("TxBytes = %d, want 1400", p.TxBytes)
+	}
+	if p.Bytes != 1700 {
+		t.Errorf("Bytes = %d, want 1700 (300+1400)", p.Bytes)
+	}
+	if p.RxPackets != 3 {
+		t.Errorf("RxPackets = %d, want 3", p.RxPackets)
+	}
+	if p.TxPackets != 7 {
+		t.Errorf("TxPackets = %d, want 7", p.TxPackets)
+	}
+	if p.Packets != 10 {
+		t.Errorf("Packets = %d, want 10 (3+7)", p.Packets)
+	}
+	if p.Expires != 100 {
+		t.Errorf("Expires = %d, want 100", p.Expires)
+	}
+	if p.LastRxReport != 90 {
+		t.Errorf("LastRxReport = %d, want 90", p.LastRxReport)
+	}
+	if p.LastTxReport != 95 {
+		t.Errorf("LastTxReport = %d, want 95", p.LastTxReport)
+	}
+}
+
 func TestComparePeerAddr(t *testing.T) {
 	tests := []struct {
 		a, b string
