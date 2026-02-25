@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -130,6 +132,9 @@ func main() {
 }
 
 func runDumpMode(client tui.ClusterClient, source cilium.ConntrackSource, namespace string, target k8s.Target, filter cilium.Filter, pods []k8s.PodInfo, format, outputFile string, repeatSec, timeoutSec int) {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	f, err := capture.NewFormatter(format)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -150,27 +155,44 @@ func runDumpMode(client tui.ClusterClient, source cilium.ConntrackSource, namesp
 		w = capture.NewStreamWriter(os.Stdout)
 	}
 
-	for {
-		snap := pollOnce(client, source, namespace, target, filter, pods, time.Duration(timeoutSec)*time.Second)
-		if err := capture.DumpOnce(f, w, snap); err != nil {
-			if closer != nil {
-				closer()
-			}
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
+	snap := pollOnce(ctx, client, source, namespace, target, filter, pods, time.Duration(timeoutSec)*time.Second)
+	if err := capture.DumpOnce(f, w, snap); err != nil {
+		if closer != nil {
+			closer()
 		}
-		if repeatSec <= 0 {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	if repeatSec <= 0 {
+		if closer != nil {
+			closer()
+		}
+		return
+	}
+
+	ticker := time.NewTicker(time.Duration(repeatSec) * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
 			if closer != nil {
 				closer()
 			}
 			return
+		case <-ticker.C:
+			snap := pollOnce(ctx, client, source, namespace, target, filter, pods, time.Duration(timeoutSec)*time.Second)
+			if err := capture.DumpOnce(f, w, snap); err != nil {
+				if closer != nil {
+					closer()
+				}
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
 		}
-		time.Sleep(time.Duration(repeatSec) * time.Second)
 	}
 }
 
-func pollOnce(client tui.ClusterClient, source cilium.ConntrackSource, _ string, _ k8s.Target, filter cilium.Filter, pods []k8s.PodInfo, timeout time.Duration) capture.Snapshot {
-	ctx := context.Background()
+func pollOnce(ctx context.Context, client tui.ClusterClient, source cilium.ConntrackSource, _ string, _ k8s.Target, filter cilium.Filter, pods []k8s.PodInfo, timeout time.Duration) capture.Snapshot {
 
 	nodeGroups := make(map[string][]k8s.PodInfo)
 	for _, p := range pods {
