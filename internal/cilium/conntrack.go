@@ -11,10 +11,21 @@ import (
 // Peer represents a conntrack peer with its source address and the destination
 // port on the pod it is connected to.
 type Peer struct {
-	Src     string // e.g. "10.4.166.193:52628"
-	DstPort int    // destination port on the pod
-	Proto   string // "TCP" or "UDP"
-	State   string // "established" or "closing"
+	Src          string // e.g. "10.4.166.193:52628"
+	DstPort      int    // destination port on the pod
+	Proto        string // "TCP" or "UDP"
+	State        string // "established" or "closing"
+	Bytes        uint64 // total bytes (RxBytes+TxBytes or Bytes)
+	Packets      uint64 // total packets (RxPackets+TxPackets or Packets)
+	RxBytes      uint64
+	TxBytes      uint64
+	RxPackets    uint64
+	TxPackets    uint64
+	Expires      uint32 // kernel time until GC (ms)
+	LastRxReport uint32
+	LastTxReport uint32
+	RxFlagsSeen  uint8
+	TxFlagsSeen  uint8
 }
 
 // Filter controls which conntrack entries are included.
@@ -167,6 +178,38 @@ func (f Filter) effectiveStates() []string {
 	return f.States
 }
 
+// parseKVUint extracts a uint64 value for a key like "Bytes=452" from the line.
+func parseKVUint(line, key string) uint64 {
+	prefix := key + "="
+	idx := strings.Index(line, prefix)
+	if idx < 0 {
+		return 0
+	}
+	start := idx + len(prefix)
+	end := start
+	for end < len(line) && line[end] != ' ' && line[end] != '\t' {
+		end++
+	}
+	v, _ := strconv.ParseUint(line[start:end], 10, 64)
+	return v
+}
+
+// parseKVHex extracts a uint8 from a hex value like "RxFlagsSeen=0x02".
+func parseKVHex(line, key string) uint8 {
+	prefix := key + "="
+	idx := strings.Index(line, prefix)
+	if idx < 0 {
+		return 0
+	}
+	start := idx + len(prefix)
+	end := start
+	for end < len(line) && line[end] != ' ' && line[end] != '\t' {
+		end++
+	}
+	v, _ := strconv.ParseUint(strings.TrimPrefix(line[start:end], "0x"), 16, 8)
+	return uint8(v)
+}
+
 // ParseCTOutput parses cilium bpf ct list output and returns unique peers
 // with active IN connections to the given podIP matching the filter.
 func ParseCTOutput(output string, podIP string, filter Filter) []Peer {
@@ -280,11 +323,40 @@ func ParseCTOutput(output string, podIP string, filter Filter) []Peer {
 			state = "closing"
 		}
 
+		// Parse rich fields.
+		rxBytes := parseKVUint(line, "RxBytes")
+		txBytes := parseKVUint(line, "TxBytes")
+		rxPackets := parseKVUint(line, "RxPackets")
+		txPackets := parseKVUint(line, "TxPackets")
+
+		// Older Cilium uses "Packets" and "Bytes" (combined).
+		totalBytes := parseKVUint(line, "Bytes")
+		totalPackets := parseKVUint(line, "Packets")
+
+		// Prefer split fields; fall back to combined.
+		if rxBytes == 0 && txBytes == 0 && totalBytes > 0 {
+			rxBytes = totalBytes
+		}
+		if rxPackets == 0 && txPackets == 0 && totalPackets > 0 {
+			rxPackets = totalPackets
+		}
+
 		peers = append(peers, Peer{
-			Src:     src,
-			DstPort: dstPort,
-			Proto:   proto,
-			State:   state,
+			Src:          src,
+			DstPort:      dstPort,
+			Proto:        proto,
+			State:        state,
+			Bytes:        rxBytes + txBytes,
+			Packets:      rxPackets + txPackets,
+			RxBytes:      rxBytes,
+			TxBytes:      txBytes,
+			RxPackets:    rxPackets,
+			TxPackets:    txPackets,
+			Expires:      uint32(parseKVUint(line, "expires")),
+			LastRxReport: uint32(parseKVUint(line, "LastRxReport")),
+			LastTxReport: uint32(parseKVUint(line, "LastTxReport")),
+			RxFlagsSeen:  parseKVHex(line, "RxFlagsSeen"),
+			TxFlagsSeen:  parseKVHex(line, "TxFlagsSeen"),
 		})
 	}
 

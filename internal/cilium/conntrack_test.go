@@ -241,6 +241,40 @@ func TestParseCTOutput_PeerFields(t *testing.T) {
 	}
 }
 
+func TestParseCTOutput_RichFields(t *testing.T) {
+	peers := ParseCTOutput(sampleCTOutput, "10.4.34.6", Filter{
+		PortMin: 4143, PortMax: 4143,
+		States: []string{"all"},
+	})
+
+	// Find the first established peer.
+	var p *Peer
+	for i := range peers {
+		if peers[i].Src == "10.4.166.193:52628" {
+			p = &peers[i]
+			break
+		}
+	}
+	if p == nil {
+		t.Fatal("missing peer 10.4.166.193:52628")
+	}
+	if p.Bytes != 452 {
+		t.Errorf("Bytes = %d, want 452", p.Bytes)
+	}
+	if p.Packets != 5 {
+		t.Errorf("Packets = %d, want 5", p.Packets)
+	}
+	if p.Expires != 277365 {
+		t.Errorf("Expires = %d, want 277365", p.Expires)
+	}
+	if p.LastRxReport != 277355 {
+		t.Errorf("LastRxReport = %d, want 277355", p.LastRxReport)
+	}
+	if p.LastTxReport != 277355 {
+		t.Errorf("LastTxReport = %d, want 277355", p.LastTxReport)
+	}
+}
+
 func TestComparePeerAddr(t *testing.T) {
 	tests := []struct {
 		a, b string
