@@ -1422,6 +1422,22 @@ func TestPeerSortByBytes(t *testing.T) {
 	}
 }
 
+func TestPodListShowsTotalBytes(t *testing.T) {
+	m := testModel()
+	m.width = 100
+	m.height = 24
+	m.timestamp = time.Now()
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432, Bytes: 1048576},
+		{Src: "10.1.0.2:5678", DstPort: 5432, Bytes: 1048576},
+	}
+
+	view := m.View()
+	if !strings.Contains(view, "2.0 M") {
+		t.Error("Pod list should show aggregate bytes (2.0 M)")
+	}
+}
+
 func TestPeerViewSearchHighlightFilters(t *testing.T) {
 	m := testModel()
 	m.width = 120

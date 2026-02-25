@@ -739,14 +739,25 @@ func (m Model) viewPodList(w int) string {
 			name += " (exited)"
 		}
 
+		var totalBytes uint64
+		for _, peer := range m.peers[p.Name] {
+			totalBytes += peer.Bytes
+		}
+
 		var countText string
 		switch {
 		case m.timestamp.IsZero():
 			countText = "…"
 		case peerCount == 1:
 			countText = "1 peer"
+			if totalBytes > 0 {
+				countText += "  " + format.Bytes(totalBytes)
+			}
 		default:
 			countText = fmt.Sprintf("%d peers", peerCount)
+			if totalBytes > 0 {
+				countText += "  " + format.Bytes(totalBytes)
+			}
 		}
 
 		if i == m.cursor {
