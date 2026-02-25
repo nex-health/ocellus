@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/aurelcanciu/ocellus/internal/capture"
 	"github.com/aurelcanciu/ocellus/internal/cilium"
 	"github.com/aurelcanciu/ocellus/internal/k8s"
+	"github.com/aurelcanciu/ocellus/internal/poll"
 	"github.com/aurelcanciu/ocellus/internal/tui"
 )
 
@@ -99,7 +99,7 @@ func main() {
 	}
 
 	if *dump {
-		runDumpMode(client, cilium.NewAutoSource(), *namespace, target, filter, pods, *outputFormat, *outputFile, *repeat, *timeout)
+		runDumpMode(client, cilium.NewAutoSource(), filter, pods, *outputFormat, *outputFile, *repeat, *timeout)
 		return
 	}
 
@@ -131,7 +131,7 @@ func main() {
 	}
 }
 
-func runDumpMode(client tui.ClusterClient, source cilium.ConntrackSource, namespace string, target k8s.Target, filter cilium.Filter, pods []k8s.PodInfo, format, outputFile string, repeatSec, timeoutSec int) {
+func runDumpMode(client tui.ClusterClient, source cilium.ConntrackSource, filter cilium.Filter, pods []k8s.PodInfo, format, outputFile string, repeatSec, timeoutSec int) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -155,7 +155,15 @@ func runDumpMode(client tui.ClusterClient, source cilium.ConntrackSource, namesp
 		w = capture.NewStreamWriter(os.Stdout)
 	}
 
-	snap := pollOnce(ctx, client, source, namespace, target, filter, pods, time.Duration(timeoutSec)*time.Second)
+	pollParams := poll.Params{
+		Client:  client,
+		Source:  source,
+		Filter:  filter,
+		Pods:    pods,
+		Timeout: time.Duration(timeoutSec) * time.Second,
+	}
+
+	snap := poll.Once(ctx, pollParams)
 	if err := capture.DumpOnce(f, w, snap); err != nil {
 		if closer != nil {
 			closer()
@@ -180,7 +188,7 @@ func runDumpMode(client tui.ClusterClient, source cilium.ConntrackSource, namesp
 			}
 			return
 		case <-ticker.C:
-			snap := pollOnce(ctx, client, source, namespace, target, filter, pods, time.Duration(timeoutSec)*time.Second)
+			snap := poll.Once(ctx, pollParams)
 			if err := capture.DumpOnce(f, w, snap); err != nil {
 				if closer != nil {
 					closer()
@@ -189,63 +197,5 @@ func runDumpMode(client tui.ClusterClient, source cilium.ConntrackSource, namesp
 				os.Exit(1)
 			}
 		}
-	}
-}
-
-func pollOnce(ctx context.Context, client tui.ClusterClient, source cilium.ConntrackSource, _ string, _ k8s.Target, filter cilium.Filter, pods []k8s.PodInfo, timeout time.Duration) capture.Snapshot {
-
-	nodeGroups := make(map[string][]k8s.PodInfo)
-	for _, p := range pods {
-		nodeGroups[p.Node] = append(nodeGroups[p.Node], p)
-	}
-
-	var mu sync.Mutex
-	peerResults := make(map[string][]cilium.Peer)
-	var pollErrors []string
-
-	var wg sync.WaitGroup
-	for node, nodePods := range nodeGroups {
-		wg.Add(1)
-		go func(node string, nodePods []k8s.PodInfo) {
-			defer wg.Done()
-			nodeCtx := ctx
-			if timeout > 0 {
-				var cancel context.CancelFunc
-				nodeCtx, cancel = context.WithTimeout(ctx, timeout)
-				defer cancel()
-			}
-			agentName, err := cilium.FindCiliumAgent(nodeCtx, client, node)
-			if err != nil {
-				mu.Lock()
-				pollErrors = append(pollErrors, fmt.Sprintf("node %s: %v", node, err))
-				mu.Unlock()
-				return
-			}
-			podIPs := make([]string, len(nodePods))
-			for i, p := range nodePods {
-				podIPs[i] = p.IP
-			}
-			results, err := source.QueryPeers(nodeCtx, client, agentName, podIPs, filter)
-			if err != nil {
-				mu.Lock()
-				pollErrors = append(pollErrors, fmt.Sprintf("node %s: %v", node, err))
-				mu.Unlock()
-				return
-			}
-			mu.Lock()
-			for _, p := range nodePods {
-				if peers, ok := results[p.IP]; ok {
-					peerResults[p.Name] = peers
-				}
-			}
-			mu.Unlock()
-		}(node, nodePods)
-	}
-	wg.Wait()
-
-	return capture.Snapshot{
-		Timestamp: time.Now().UTC(),
-		Pods:      peerResults,
-		Errors:    pollErrors,
 	}
 }

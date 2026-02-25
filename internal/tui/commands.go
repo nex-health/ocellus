@@ -3,12 +3,12 @@ package tui
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/aurelcanciu/ocellus/internal/cilium"
 	"github.com/aurelcanciu/ocellus/internal/k8s"
+	"github.com/aurelcanciu/ocellus/internal/poll"
 )
 
 // ClusterClient combines the interfaces needed for polling.
@@ -24,66 +24,20 @@ func pollCmd(client ClusterClient, source cilium.ConntrackSource, namespace stri
 	return func() tea.Msg {
 		ctx := context.Background()
 
-		// Group active pods by node.
-		nodeGroups := make(map[string][]k8s.PodInfo)
-		for _, p := range pods {
-			if !exited[p.Name] {
-				nodeGroups[p.Node] = append(nodeGroups[p.Node], p)
-			}
-		}
-
-		var mu sync.Mutex
-		peerResults := make(map[string][]cilium.Peer)
-		var pollErrors []string
-
-		addError := func(msg string) {
-			mu.Lock()
-			pollErrors = append(pollErrors, msg)
-			mu.Unlock()
-		}
-
-		var wg sync.WaitGroup
-		for node, nodePods := range nodeGroups {
-			wg.Add(1)
-			go func(node string, nodePods []k8s.PodInfo) {
-				defer wg.Done()
-				nodeCtx := ctx
-				if timeout > 0 {
-					var cancel context.CancelFunc
-					nodeCtx, cancel = context.WithTimeout(ctx, timeout)
-					defer cancel()
-				}
-				agentName, err := cilium.FindCiliumAgent(nodeCtx, client, node)
-				if err != nil {
-					addError(fmt.Sprintf("node %s: %v", node, err))
-					return
-				}
-				podIPs := make([]string, len(nodePods))
-				for i, p := range nodePods {
-					podIPs[i] = p.IP
-				}
-				results, err := source.QueryPeers(nodeCtx, client, agentName, podIPs, filter)
-				if err != nil {
-					addError(fmt.Sprintf("node %s: %v", node, err))
-					return
-				}
-				// Map IP-keyed results back to pod-name-keyed results.
-				mu.Lock()
-				defer mu.Unlock()
-				for _, p := range nodePods {
-					if peers, ok := results[p.IP]; ok {
-						peerResults[p.Name] = peers
-					}
-				}
-			}(node, nodePods)
-		}
-		wg.Wait()
+		snap := poll.Once(ctx, poll.Params{
+			Client:  client,
+			Source:  source,
+			Filter:  filter,
+			Pods:    pods,
+			Exited:  exited,
+			Timeout: timeout,
+		})
 
 		// Check for exited pods.
 		newExited := make(map[string]bool)
 		currentPods, err := k8s.DiscoverPods(ctx, client, namespace, target)
 		if err != nil {
-			addError(fmt.Sprintf("pod discovery: %v", err))
+			snap.Errors = append(snap.Errors, fmt.Sprintf("pod discovery: %v", err))
 		} else {
 			currentNames := make(map[string]bool)
 			for _, p := range currentPods {
@@ -97,10 +51,10 @@ func pollCmd(client ClusterClient, source cilium.ConntrackSource, namespace stri
 		}
 
 		return pollResultMsg{
-			peers:     peerResults,
+			peers:     snap.Pods,
 			exited:    newExited,
-			timestamp: time.Now().UTC(),
-			errors:    pollErrors,
+			timestamp: snap.Timestamp,
+			errors:    snap.Errors,
 		}
 	}
 }
