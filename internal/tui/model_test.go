@@ -3,6 +3,7 @@ package tui
 import (
 	"bytes"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -2045,7 +2046,9 @@ func TestDumpKeybinding(t *testing.T) {
 
 	m4, _ := m3.Update(keyMsg("d"))
 	m5 := m4.(Model)
-	_ = m5 // Verify no panic
+	if m5.dumpStatus == "" {
+		t.Error("dumpStatus should be set after dump")
+	}
 }
 
 func TestRecordToggleKeybinding(t *testing.T) {
@@ -2093,5 +2096,75 @@ func TestHelpShowsDumpAndRecordKeys(t *testing.T) {
 	}
 	if !strings.Contains(output, "recording") || !strings.Contains(output, "R") {
 		t.Error("help should show record toggle keybinding")
+	}
+}
+
+func TestCaptureFilePath(t *testing.T) {
+	// No recorder — should return empty.
+	m := testModel()
+	if got := m.CaptureFilePath(); got != "" {
+		t.Errorf("CaptureFilePath() without recorder = %q, want empty", got)
+	}
+
+	// With a recorder backed by a FileWriter — should return the path.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.jsonl")
+	fw, err := capture.NewFileWriter(path)
+	if err != nil {
+		t.Fatalf("NewFileWriter: %v", err)
+	}
+	defer fw.Close()
+	f, _ := capture.NewFormatter("jsonl")
+	m.recorder = capture.NewRecorder(f, fw)
+	if got := m.CaptureFilePath(); got != path {
+		t.Errorf("CaptureFilePath() = %q, want %q", got, path)
+	}
+}
+
+func TestDumpStatusShownInPodListStatusBar(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.Ascii)
+	m := testModel()
+	m.width = 120
+	m.height = 24
+	m.timestamp = time.Now()
+	m.dumpStatus = "snapshot saved to test.jsonl"
+	m.dumpStatusT = time.Now()
+
+	view := m.View()
+	if !strings.Contains(view, "snapshot saved to test.jsonl") {
+		t.Error("pod list status bar should show dumpStatus when recent")
+	}
+}
+
+func TestDumpStatusShownInPeerListStatusBar(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.Ascii)
+	m := testModel()
+	m.width = 120
+	m.height = 24
+	m.mode = viewPeers
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.1.0.1:1234", DstPort: 5432},
+	}
+	m.dumpStatus = "recording to test.jsonl"
+	m.dumpStatusT = time.Now()
+
+	view := m.View()
+	if !strings.Contains(view, "recording to test.jsonl") {
+		t.Error("peer list status bar should show dumpStatus when recent")
+	}
+}
+
+func TestDumpStatusNotShownWhenStale(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.Ascii)
+	m := testModel()
+	m.width = 120
+	m.height = 24
+	m.timestamp = time.Now()
+	m.dumpStatus = "snapshot saved to test.jsonl"
+	m.dumpStatusT = time.Now().Add(-10 * time.Second) // 10 seconds ago
+
+	view := m.View()
+	if strings.Contains(view, "snapshot saved to test.jsonl") {
+		t.Error("pod list status bar should NOT show stale dumpStatus")
 	}
 }

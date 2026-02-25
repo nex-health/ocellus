@@ -98,6 +98,14 @@ func New(cfg Config) Model {
 	}
 }
 
+// CaptureFilePath returns the capture file path if a recorder was used.
+func (m Model) CaptureFilePath() string {
+	if m.recorder != nil {
+		return m.recorder.Path()
+	}
+	return ""
+}
+
 // ensureRecorder creates the recorder if it doesn't exist.
 func (m *Model) ensureRecorder() error {
 	if m.recorder != nil {
@@ -276,7 +284,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err := m.recorder.DumpSnapshot(snap); err != nil {
 				m.dumpStatus = fmt.Sprintf("dump error: %v", err)
 			} else {
-				m.dumpStatus = "snapshot dumped"
+				m.dumpStatus = fmt.Sprintf("snapshot saved to %s", m.recorder.Path())
 			}
 			m.dumpStatusT = time.Now()
 			return m, nil
@@ -287,6 +295,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.recorder.SetContinuous(!m.recorder.IsContinuous())
+			if m.recorder.IsContinuous() {
+				m.dumpStatus = fmt.Sprintf("recording to %s", m.recorder.Path())
+			} else {
+				m.dumpStatus = "recording stopped"
+			}
+			m.dumpStatusT = time.Now()
 			return m, nil
 		}
 
@@ -918,13 +932,17 @@ func (m Model) viewPodList(w int) string {
 
 	// Status bar.
 	var statusIndicator string
-	switch {
-	case len(m.lastErrors) > 0:
-		statusIndicator = errorStyle.Render("✘ " + errorSummary(m.lastErrors))
-	case m.paused:
-		statusIndicator = pausedStyle.Render("● paused")
-	case m.polling:
-		statusIndicator = pollingStyle.Render("◉ polling")
+	if m.dumpStatus != "" && time.Since(m.dumpStatusT) < 5*time.Second {
+		statusIndicator = headerDimStyle.Render(m.dumpStatus)
+	} else {
+		switch {
+		case len(m.lastErrors) > 0:
+			statusIndicator = errorStyle.Render("✘ " + errorSummary(m.lastErrors))
+		case m.paused:
+			statusIndicator = pausedStyle.Render("● paused")
+		case m.polling:
+			statusIndicator = pollingStyle.Render("◉ polling")
+		}
 	}
 	keys := fmt.Sprintf("  %s quit  %s navigate  %s select  %s next active  %s pause  %s dump  %s record  %s help",
 		statusBarKeyStyle.Render("q"),
@@ -1111,13 +1129,17 @@ func (m Model) viewPeerList(w int) string {
 		b.WriteString(searchBarStyle.Width(w).Render(searchText + strings.Repeat(" ", padLen)))
 	} else {
 		var statusIndicator string
-		switch {
-		case len(m.lastErrors) > 0:
-			statusIndicator = errorStyle.Render("✘ " + errorSummary(m.lastErrors))
-		case m.paused:
-			statusIndicator = pausedStyle.Render("● paused")
-		case m.polling:
-			statusIndicator = pollingStyle.Render("◉ polling")
+		if m.dumpStatus != "" && time.Since(m.dumpStatusT) < 5*time.Second {
+			statusIndicator = headerDimStyle.Render(m.dumpStatus)
+		} else {
+			switch {
+			case len(m.lastErrors) > 0:
+				statusIndicator = errorStyle.Render("✘ " + errorSummary(m.lastErrors))
+			case m.paused:
+				statusIndicator = pausedStyle.Render("● paused")
+			case m.polling:
+				statusIndicator = pollingStyle.Render("◉ polling")
+			}
 		}
 		scrollInfo := ""
 		maxScroll := m.maxScroll()

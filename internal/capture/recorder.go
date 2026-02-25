@@ -65,6 +65,14 @@ func (r *Recorder) IsContinuous() bool {
 	return r.continuous
 }
 
+// Path returns the file path if the underlying writer is a *FileWriter.
+func (r *Recorder) Path() string {
+	if fw, ok := r.writer.(*FileWriter); ok {
+		return fw.Path()
+	}
+	return ""
+}
+
 // Close flushes and closes the underlying writer.
 func (r *Recorder) Close() error {
 	return r.writer.Close()

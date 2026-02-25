@@ -110,9 +110,15 @@ func main() {
 	})
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
+	finalModel, err := p.Run()
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
+	}
+	if fm, ok := finalModel.(tui.Model); ok {
+		if path := fm.CaptureFilePath(); path != "" {
+			fmt.Fprintf(os.Stderr, "Capture written to %s\n", path)
+		}
 	}
 }
 
@@ -124,14 +130,15 @@ func runDumpMode(client tui.ClusterClient, source cilium.ConntrackSource, namesp
 	}
 
 	var w capture.Writer
+	var closer func()
 	if outputFile != "" {
 		fw, err := capture.NewFileWriter(outputFile)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
-		defer fw.Close()
 		w = fw
+		closer = func() { fw.Close() }
 	} else {
 		w = capture.NewStreamWriter(os.Stdout)
 	}
@@ -139,17 +146,23 @@ func runDumpMode(client tui.ClusterClient, source cilium.ConntrackSource, namesp
 	for {
 		snap := pollOnce(client, source, namespace, target, filter, pods, time.Duration(timeoutSec)*time.Second)
 		if err := capture.DumpOnce(f, w, snap); err != nil {
+			if closer != nil {
+				closer()
+			}
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 		if repeatSec <= 0 {
+			if closer != nil {
+				closer()
+			}
 			return
 		}
 		time.Sleep(time.Duration(repeatSec) * time.Second)
 	}
 }
 
-func pollOnce(client tui.ClusterClient, source cilium.ConntrackSource, namespace string, target k8s.Target, filter cilium.Filter, pods []k8s.PodInfo, timeout time.Duration) capture.Snapshot {
+func pollOnce(client tui.ClusterClient, source cilium.ConntrackSource, _ string, _ k8s.Target, filter cilium.Filter, pods []k8s.PodInfo, timeout time.Duration) capture.Snapshot {
 	ctx := context.Background()
 
 	nodeGroups := make(map[string][]k8s.PodInfo)

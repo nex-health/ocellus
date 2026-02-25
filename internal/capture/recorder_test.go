@@ -3,6 +3,8 @@ package capture
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -140,5 +142,30 @@ func TestRecorderIsContinuous(t *testing.T) {
 	r.SetContinuous(true)
 	if !r.IsContinuous() {
 		t.Error("should be continuous after SetContinuous(true)")
+	}
+}
+
+func TestRecorderPath(t *testing.T) {
+	// With a StreamWriter, Path() returns empty.
+	var buf bytes.Buffer
+	r := NewRecorder(&JSONLFormatter{}, NewStreamWriter(&buf))
+	if got := r.Path(); got != "" {
+		t.Errorf("Path() with StreamWriter = %q, want empty", got)
+	}
+
+	// With a FileWriter, Path() returns the file path.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.jsonl")
+	fw, err := NewFileWriter(path)
+	if err != nil {
+		t.Fatalf("NewFileWriter: %v", err)
+	}
+	defer func() {
+		fw.Close()
+		os.Remove(path)
+	}()
+	r2 := NewRecorder(&JSONLFormatter{}, fw)
+	if got := r2.Path(); got != path {
+		t.Errorf("Path() with FileWriter = %q, want %q", got, path)
 	}
 }
