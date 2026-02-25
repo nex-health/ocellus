@@ -13,6 +13,33 @@ Typical use cases:
 - Detecting connection leaks or imbalances between pod instances
 - Quick operational checks ("how many clients are connected right now?") without leaving the terminal
 
+## Installation
+
+Download the latest binary for your platform from the [Releases](https://github.com/aurelcanciu/ocellus/releases) page:
+
+```sh
+# macOS (Apple Silicon)
+curl -Lo ocellus https://github.com/aurelcanciu/ocellus/releases/latest/download/ocellus-darwin-arm64
+chmod +x ocellus
+sudo mv ocellus /usr/local/bin/
+
+# macOS (Intel)
+curl -Lo ocellus https://github.com/aurelcanciu/ocellus/releases/latest/download/ocellus-darwin-amd64
+chmod +x ocellus
+sudo mv ocellus /usr/local/bin/
+
+# Linux (amd64)
+curl -Lo ocellus https://github.com/aurelcanciu/ocellus/releases/latest/download/ocellus-linux-amd64
+chmod +x ocellus
+sudo mv ocellus /usr/local/bin/
+```
+
+Or install with Go 1.26+:
+
+```sh
+go install github.com/aurelcanciu/ocellus@latest
+```
+
 ## Usage
 
 ```
@@ -38,7 +65,7 @@ pod-name
 | `-i, --interval` | `10` | Polling interval in seconds |
 | `--proto` | `tcp` | Protocol filter: `tcp`, `udp`, or `tcp,udp` |
 | `--src` | all | Source IP or CIDR filter (e.g. `10.4.166.0/24`) |
-| `--state` | `established` | Connection state: `established`, `closing`, `all` |
+| `--state` | `all` | Connection state: `established`, `closing`, `all` |
 | `--timeout` | `0` | Per-poll timeout in seconds (0 = no timeout) |
 | `--kubeconfig` | standard | Path to kubeconfig |
 | `-o, --output-format` | `jsonl` | Capture format: `jsonl`, `json`, `csv`, `text` |

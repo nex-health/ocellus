@@ -1939,6 +1939,86 @@ func TestViewPeerListScrollInfo(t *testing.T) {
 	}
 }
 
+func TestPeerViewColumnAlignment(t *testing.T) {
+	m := testModel()
+	m.width = 120
+	m.height = 24
+	m.mode = viewPeers
+	m.sortField = sortSrc // sort arrow on Peer Address:Port column
+	m.peers["pod-1"] = []cilium.Peer{
+		{Src: "10.4.34.25:53138", DstPort: 3000, Proto: "TCP", State: "established"},
+	}
+
+	view := m.View()
+	lines := strings.Split(view, "\n")
+
+	// Find the header line (contains "Peer Address:Port") and first data line (contains the IP).
+	var headerLine, dataLine string
+	for _, line := range lines {
+		plain := stripAnsi(line)
+		if strings.Contains(plain, "Peer Address:Port") {
+			headerLine = plain
+		}
+		if strings.Contains(plain, "10.4.34.25:53138") {
+			dataLine = plain
+		}
+	}
+	if headerLine == "" || dataLine == "" {
+		t.Fatalf("could not find header or data line in view:\n%s", view)
+	}
+
+	// The "Proto" column should start at the same display position in both lines.
+	// Use rune index (not byte index) since ▲ is multi-byte.
+	hdrRunes := []rune(headerLine)
+	dataRunes := []rune(dataLine)
+	hdrProtoIdx := runeIndex(hdrRunes, "Proto")
+	dataProtoIdx := runeIndex(dataRunes, "TCP")
+	if hdrProtoIdx != dataProtoIdx {
+		t.Errorf("Proto column misaligned: header at %d, data at %d\nheader: %q\ndata:   %q",
+			hdrProtoIdx, dataProtoIdx, headerLine, dataLine)
+	}
+}
+
+// stripAnsi removes ANSI escape sequences from a string.
+func stripAnsi(s string) string {
+	var result []byte
+	i := 0
+	for i < len(s) {
+		if s[i] == '\x1b' && i+1 < len(s) && s[i+1] == '[' {
+			// Skip until we find the terminal letter.
+			j := i + 2
+			for j < len(s) && !((s[j] >= 'A' && s[j] <= 'Z') || (s[j] >= 'a' && s[j] <= 'z')) {
+				j++
+			}
+			if j < len(s) {
+				j++ // skip the terminal letter
+			}
+			i = j
+		} else {
+			result = append(result, s[i])
+			i++
+		}
+	}
+	return string(result)
+}
+
+func runeIndex(runes []rune, substr string) int {
+	target := []rune(substr)
+	for i := 0; i <= len(runes)-len(target); i++ {
+		match := true
+		for j := 0; j < len(target); j++ {
+			if runes[i+j] != target[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return i
+		}
+	}
+	return -1
+}
+
 func TestPollResultCursorClampedWhenExceedsPods(t *testing.T) {
 	m := testModel()
 	m.cursor = 10 // exceeds number of pods (3)

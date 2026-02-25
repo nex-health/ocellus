@@ -1022,6 +1022,8 @@ func (m Model) viewPeerList(w int) string {
 				bs = format.Bytes(p.RxBytes) + "/" + format.Bytes(p.TxBytes)
 			} else if p.Bytes > 0 {
 				bs = format.Bytes(p.Bytes)
+			} else {
+				bs = "—"
 			}
 			bytesStrs[i] = bs
 			if len(bs) > bytesColW {
@@ -1061,7 +1063,7 @@ func (m Model) viewPeerList(w int) string {
 			bytesLabel += styledArrow
 		}
 
-		// Pad labels. For labels with ANSI codes, we need to pad based on display width.
+		// Use padded widths (which include arrow width) for both header and data rows.
 		srcPad := padSrc - lipgloss.Width(srcLabel)
 		if srcPad > 0 {
 			srcLabel += strings.Repeat(" ", srcPad)
@@ -1103,7 +1105,7 @@ func (m Model) viewPeerList(w int) string {
 
 			// Highlight search match in Src column.
 			srcStr := highlightMatch(p.Src, m.searchQuery)
-			srcPadding := peerColW - lipgloss.Width(srcStr)
+			srcPadding := padSrc - lipgloss.Width(srcStr)
 			if srcPadding > 0 {
 				srcStr += strings.Repeat(" ", srcPadding)
 			}
@@ -1112,7 +1114,7 @@ func (m Model) viewPeerList(w int) string {
 
 			row := fmt.Sprintf("  %s  %-*s  %-5s  %s  %-*s",
 				srcStr,
-				localColW, local,
+				padLocal, local,
 				p.Proto,
 				stateStr,
 				bytesColW, bytesStr)

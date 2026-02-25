@@ -31,7 +31,7 @@ func main() {
 	port := flag.StringP("port", "p", "", "TCP port or range to track (e.g. 5432, 5432-5440)")
 	proto := flag.String("proto", "tcp", "Protocol filter: tcp, udp, or tcp,udp")
 	src := flag.String("src", "", "Source IP or CIDR filter (e.g. 10.4.166.0/24)")
-	state := flag.String("state", "established", "Connection state: established, closing, all")
+	state := flag.String("state", "all", "Connection state: established, closing, all")
 	interval := flag.IntP("interval", "i", 10, "Polling interval in seconds")
 	timeout := flag.Int("timeout", 0, "Poll timeout in seconds (0 = no timeout)")
 	kubeconfig := flag.String("kubeconfig", "", "Path to kubeconfig (default: standard resolution)")
