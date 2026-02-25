@@ -151,10 +151,10 @@ func (f Filter) FilterSummary() string {
 		parts = append(parts, "all ports")
 	}
 
-	// Protocol (only show if not just tcp).
+	// Protocol (only show if not the default tcp).
 	protos := f.effectiveProtos()
-	if len(protos) != 1 || protos[0] != "TCP" {
-		parts = append(parts, strings.ToLower(strings.Join(protos, "+")))
+	if !(len(protos) == 1 && protos[0] == "TCP") {
+		parts = append(parts, strings.ToLower(strings.Join(protos, ",")))
 	}
 
 	// Source CIDR.

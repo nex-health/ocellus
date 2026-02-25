@@ -134,6 +134,41 @@ func TestParseJSONCTOutput_UDP(t *testing.T) {
 	}
 }
 
+func TestParseJSONCTOutput_ServiceFlag(t *testing.T) {
+	// TUPLE_F_IN=1, TUPLE_F_SERVICE=4 → Flags=5 (IN + SERVICE).
+	// Entries with additional flag bits should still be recognized as inbound.
+	entries := []ctMapRecord{
+		{
+			Key: ctKey{
+				TupleKey4: &tupleKey4{
+					DestAddr:   encodeIPv4(10, 1, 0, 1),
+					SourceAddr: encodeIPv4(10, 0, 0, 1),
+					DestPort:   networkPort(53),
+					SourcePort: networkPort(2000),
+					NextHeader: 17, // UDP
+					Flags:      5,  // IN | SERVICE
+				},
+			},
+			Value: ctValue{Bytes: 300},
+		},
+	}
+	data, _ := json.Marshal(entries)
+
+	peers, err := ParseJSONCTOutput(string(data), "10.1.0.1", Filter{
+		PortMin: 53, PortMax: 53,
+		Protos: []string{"UDP"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(peers) != 1 {
+		t.Fatalf("expected 1 peer with service flag, got %d", len(peers))
+	}
+	if peers[0].Proto != "UDP" {
+		t.Errorf("Proto = %q, want UDP", peers[0].Proto)
+	}
+}
+
 func TestParseJSONCTOutput_StateClosing(t *testing.T) {
 	entries := []ctMapRecord{
 		{

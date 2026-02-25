@@ -509,8 +509,9 @@ func TestFilterSummary(t *testing.T) {
 		{"default", Filter{}, "all ports"},
 		{"single port", Filter{PortMin: 5432, PortMax: 5432}, ":5432"},
 		{"port range", Filter{PortMin: 5432, PortMax: 5440}, ":5432-5440"},
-		{"udp", Filter{Protos: []string{"UDP"}}, "all ports  udp"},
-		{"multi proto", Filter{PortMin: 53, PortMax: 53, Protos: []string{"TCP", "UDP"}}, ":53  tcp+udp"},
+		{"tcp only", Filter{Protos: []string{"TCP"}}, "all ports"},
+		{"udp only", Filter{Protos: []string{"UDP"}}, "all ports  udp"},
+		{"multi proto", Filter{PortMin: 53, PortMax: 53, Protos: []string{"TCP", "UDP"}}, ":53  tcp,udp"},
 		{"state all", Filter{States: []string{"all"}}, "all ports  state:all"},
 		{"src cidr", Filter{SrcCIDR: func() *net.IPNet { _, n, _ := net.ParseCIDR("10.0.0.0/24"); return n }()}, "all ports  src:10.0.0.0/24"},
 	}

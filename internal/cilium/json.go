@@ -95,8 +95,9 @@ func ParseJSONCTOutput(data string, podIP string, filter Filter) ([]Peer, error)
 			continue
 		}
 
-		// Flags == 1 means IN direction in Cilium's CT map.
-		if k.Flags != 1 {
+		// TUPLE_F_IN (bit 0) means IN direction in Cilium's CT map.
+		// Other bits may be set (e.g. TUPLE_F_SERVICE=4), so check the bit.
+		if k.Flags&0x01 == 0 {
 			continue
 		}
 
