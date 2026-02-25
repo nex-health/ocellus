@@ -2154,6 +2154,30 @@ func TestDumpStatusShownInPeerListStatusBar(t *testing.T) {
 	}
 }
 
+type errorWriter struct{}
+
+func (w *errorWriter) Write(_ []byte) error { return fmt.Errorf("disk full") }
+func (w *errorWriter) Close() error         { return nil }
+
+func TestRecorderErrorSurfacedInDumpStatus(t *testing.T) {
+	m := testModel()
+	m.recorder = capture.NewRecorder(
+		&capture.JSONLFormatter{},
+		&errorWriter{},
+	)
+	m.recorder.SetContinuous(true)
+
+	ts := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	updated, _ := m.Update(pollResultMsg{
+		peers:     map[string][]cilium.Peer{"pod-1": {{Src: "10.0.0.1:1000", DstPort: 5432}}},
+		timestamp: ts,
+	})
+	m2 := updated.(Model)
+	if !strings.Contains(m2.dumpStatus, "disk full") {
+		t.Errorf("dumpStatus = %q, want to contain 'disk full'", m2.dumpStatus)
+	}
+}
+
 func TestDumpStatusNotShownWhenStale(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.Ascii)
 	m := testModel()

@@ -231,7 +231,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Exited:    m.exited,
 				Errors:    m.lastErrors,
 			}
-			_ = m.recorder.OnPoll(snap)
+			if err := m.recorder.OnPoll(snap); err != nil {
+				m.dumpStatus = fmt.Sprintf("record error: %v", err)
+				m.dumpStatusT = time.Now()
+			}
 		}
 		if len(m.config.Pods) == 0 {
 			m.cursor = 0
