@@ -192,5 +192,63 @@ make build          # dev build
 make release        # optimized, stripped, version-stamped
 make test           # run tests
 make race           # run tests with race detector
-make lint           # go vet
+make lint           # golangci-lint
+make fix            # apply go fix rewrites
 ```
+
+## Releasing
+
+Releases are automated via [GoReleaser](https://goreleaser.com/) and GitHub Actions. Pushing a semver tag triggers the pipeline, which builds cross-platform binaries and publishes a GitHub release.
+
+### Steps
+
+1. **Ensure `main` is green.** CI must pass — the release workflow runs on the tagged commit, not a separate build.
+
+2. **Tag the release:**
+
+   ```sh
+   git tag v0.3.0
+   git push origin v0.3.0
+   ```
+
+   Use [Semantic Versioning](https://semver.org/): bump the major version for breaking changes, minor for new features, patch for bug fixes.
+
+3. **Wait for the [Release workflow](../../actions/workflows/release.yml).** GoReleaser will:
+   - Build `CGO_ENABLED=0` static binaries for linux/darwin/windows on amd64/arm64
+   - Stamp `main.version` with the tag
+   - Create a GitHub Release with archives, checksums, and an auto-generated changelog
+
+4. **Verify the release** on the [Releases page](../../releases). Binaries follow the naming convention `ocellus_<version>_<os>_<arch>.tar.gz` (`.zip` for Windows).
+
+### What's included
+
+| Artifact | Description |
+|----------|-------------|
+| `ocellus_*_linux_amd64.tar.gz` | Linux x86-64 |
+| `ocellus_*_linux_arm64.tar.gz` | Linux ARM64 |
+| `ocellus_*_darwin_amd64.tar.gz` | macOS Intel |
+| `ocellus_*_darwin_arm64.tar.gz` | macOS Apple Silicon |
+| `ocellus_*_windows_amd64.zip` | Windows x86-64 |
+| `ocellus_*_windows_arm64.zip` | Windows ARM64 |
+| `checksums.txt` | SHA-256 checksums for all archives |
+
+### Changelog
+
+The release changelog is generated automatically from commit messages. Commits prefixed with `docs:`, `test:`, or `ci:` are excluded. Use [Conventional Commits](https://www.conventionalcommits.org/) for clear changelogs:
+
+- `feat:` — new features (minor bump)
+- `fix:` — bug fixes (patch bump)
+- `deps:` — dependency updates
+- `chore:` — maintenance tasks
+
+### Fixing a bad release
+
+If a release needs to be yanked:
+
+```sh
+# Delete the tag locally and remotely
+git tag -d v0.3.0
+git push origin :refs/tags/v0.3.0
+```
+
+Then delete the draft/published release from the GitHub UI and re-tag when ready.
