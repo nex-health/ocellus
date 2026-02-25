@@ -44,6 +44,11 @@ var (
 			Background(colorBg).
 			Foreground(colorYellow)
 
+	headerErrorStyle = lipgloss.NewStyle().
+				Background(colorBg).
+				Foreground(colorRed).
+				Bold(true)
+
 	activeIcon = lipgloss.NewStyle().Foreground(colorGreen).SetString("●")
 	exitedIcon = lipgloss.NewStyle().Foreground(colorYellow).SetString("●")
 

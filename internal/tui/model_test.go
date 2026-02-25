@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
+	"github.com/aurelcanciu/ocellus/internal/capture"
 	"github.com/aurelcanciu/ocellus/internal/cilium"
 	"github.com/aurelcanciu/ocellus/internal/k8s"
 )
@@ -2020,5 +2022,76 @@ func TestPeerViewGPausesBehavior(t *testing.T) {
 	m2 := updated.(Model)
 	if !m2.paused {
 		t.Error("G in peer view should pause")
+	}
+}
+
+func testModelWithCapture() Model {
+	m := testModel()
+	m.recorder = capture.NewRecorder(
+		&capture.JSONLFormatter{},
+		capture.NewStreamWriter(&bytes.Buffer{}),
+	)
+	return m
+}
+
+func TestDumpKeybinding(t *testing.T) {
+	m := testModelWithCapture()
+	ts := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	m2, _ := m.Update(pollResultMsg{
+		peers:     map[string][]cilium.Peer{"pod-1": {{Src: "10.0.0.1:1000", DstPort: 5432}}},
+		timestamp: ts,
+	})
+	m3 := m2.(Model)
+
+	m4, _ := m3.Update(keyMsg("d"))
+	m5 := m4.(Model)
+	_ = m5 // Verify no panic
+}
+
+func TestRecordToggleKeybinding(t *testing.T) {
+	m := testModelWithCapture()
+	m2, _ := m.Update(keyMsg("R"))
+	m3 := m2.(Model)
+	if m3.recorder == nil {
+		t.Fatal("recorder should not be nil")
+	}
+	if !m3.recorder.IsContinuous() {
+		t.Error("recording should be on after pressing R")
+	}
+	m4, _ := m3.Update(keyMsg("R"))
+	m5 := m4.(Model)
+	if m5.recorder.IsContinuous() {
+		t.Error("recording should be off after pressing R again")
+	}
+}
+
+func TestHeaderShowsRecordingIndicator(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.Ascii)
+	m := testModelWithCapture()
+	m.width = 120
+	m.height = 40
+	m.recorder.SetContinuous(true)
+	ts := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	m.timestamp = ts
+
+	output := m.View()
+	if !strings.Contains(output, "REC") {
+		t.Error("header should show REC indicator when recording")
+	}
+}
+
+func TestHelpShowsDumpAndRecordKeys(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.Ascii)
+	m := testModel()
+	m.width = 120
+	m.height = 40
+	m.showHelp = true
+
+	output := m.View()
+	if !strings.Contains(output, "Dump") {
+		t.Error("help should show dump keybinding")
+	}
+	if !strings.Contains(output, "recording") || !strings.Contains(output, "R") {
+		t.Error("help should show record toggle keybinding")
 	}
 }

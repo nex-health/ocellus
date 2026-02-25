@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/aurelcanciu/ocellus/internal/capture"
 	"github.com/aurelcanciu/ocellus/internal/cilium"
 	"github.com/aurelcanciu/ocellus/internal/format"
 	"github.com/aurelcanciu/ocellus/internal/k8s"
@@ -54,6 +55,8 @@ type Config struct {
 	Client      ClusterClient
 	Source      cilium.ConntrackSource
 	Pods        []k8s.PodInfo
+	OutputFormat string // capture format: "jsonl", "json", "csv", "text"
+	OutputFile   string // capture file path (empty = auto-generated)
 }
 
 // Model is the Bubble Tea model for the ocellus TUI.
@@ -80,6 +83,9 @@ type Model struct {
 	pendingKey     string // for multi-key chords like "gg"
 	prevTotalBytes uint64
 	bytesPerSec    uint64
+	recorder    *capture.Recorder
+	dumpStatus  string    // status message shown briefly after dump
+	dumpStatusT time.Time // when dumpStatus was set
 }
 
 // New creates a new Model from the given config.
@@ -90,6 +96,31 @@ func New(cfg Config) Model {
 		exited:  make(map[string]bool),
 		polling: true,
 	}
+}
+
+// ensureRecorder creates the recorder if it doesn't exist.
+func (m *Model) ensureRecorder() error {
+	if m.recorder != nil {
+		return nil
+	}
+	format := m.config.OutputFormat
+	if format == "" {
+		format = "jsonl"
+	}
+	f, err := capture.NewFormatter(format)
+	if err != nil {
+		return err
+	}
+	path := m.config.OutputFile
+	if path == "" {
+		path = fmt.Sprintf("ocellus-%s.%s", time.Now().Format("2006-01-02T15-04-05"), format)
+	}
+	w, err := capture.NewFileWriter(path)
+	if err != nil {
+		return err
+	}
+	m.recorder = capture.NewRecorder(f, w)
+	return nil
 }
 
 // errorSummary returns a short deduplicated summary of polling errors.
@@ -185,6 +216,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.prevTotalBytes = currentTotalBytes
 		m.timestamp = msg.timestamp
+		if m.recorder != nil {
+			snap := capture.Snapshot{
+				Timestamp: msg.timestamp,
+				Pods:      m.peers,
+				Exited:    m.exited,
+				Errors:    m.lastErrors,
+			}
+			_ = m.recorder.OnPoll(snap)
+		}
 		if len(m.config.Pods) == 0 {
 			m.cursor = 0
 		} else if m.cursor >= len(m.config.Pods) {
@@ -220,6 +260,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.polling = true
 				return m, m.startPoll()
 			}
+			return m, nil
+		case "d":
+			if err := m.ensureRecorder(); err != nil {
+				m.dumpStatus = fmt.Sprintf("dump error: %v", err)
+				m.dumpStatusT = time.Now()
+				return m, nil
+			}
+			snap := capture.Snapshot{
+				Timestamp: m.timestamp,
+				Pods:      m.peers,
+				Exited:    m.exited,
+				Errors:    m.lastErrors,
+			}
+			if err := m.recorder.DumpSnapshot(snap); err != nil {
+				m.dumpStatus = fmt.Sprintf("dump error: %v", err)
+			} else {
+				m.dumpStatus = "snapshot dumped"
+			}
+			m.dumpStatusT = time.Now()
+			return m, nil
+		case "R":
+			if err := m.ensureRecorder(); err != nil {
+				m.dumpStatus = fmt.Sprintf("record error: %v", err)
+				m.dumpStatusT = time.Now()
+				return m, nil
+			}
+			m.recorder.SetContinuous(!m.recorder.IsContinuous())
 			return m, nil
 		}
 
@@ -671,6 +738,9 @@ func (m Model) viewHelp(w int) string {
 		"  Ctrl+d/u      Half-page down/up",
 		"  pgup/pgdn     Page scroll",
 		"  home/end      Jump to top/bottom",
+		"",
+		"  d             Dump snapshot to file",
+		"  R             Toggle continuous recording",
 	}
 
 	for _, line := range help {
@@ -742,6 +812,10 @@ func (m Model) renderHeader(b *strings.Builder, w int) {
 			parts = append(parts, headerRateStyle.Render(fmt.Sprintf("%s/s", format.Bytes(m.bytesPerSec))))
 		}
 		parts = append(parts, headerDimStyle.Render(ts))
+	}
+
+	if m.recorder != nil && m.recorder.IsContinuous() {
+		parts = append(parts, headerErrorStyle.Render("[REC]"))
 	}
 
 	headerText := "  " + strings.Join(parts, sep)
@@ -852,12 +926,14 @@ func (m Model) viewPodList(w int) string {
 	case m.polling:
 		statusIndicator = pollingStyle.Render("◉ polling")
 	}
-	keys := fmt.Sprintf("  %s quit  %s navigate  %s select  %s next active  %s pause  %s help",
+	keys := fmt.Sprintf("  %s quit  %s navigate  %s select  %s next active  %s pause  %s dump  %s record  %s help",
 		statusBarKeyStyle.Render("q"),
 		statusBarKeyStyle.Render("j/k"),
 		statusBarKeyStyle.Render("enter"),
 		statusBarKeyStyle.Render("tab"),
 		statusBarKeyStyle.Render("p"),
+		statusBarKeyStyle.Render("d"),
+		statusBarKeyStyle.Render("R"),
 		statusBarKeyStyle.Render("?"))
 	padLen := w - lipgloss.Width(keys) - lipgloss.Width(statusIndicator) - 2
 	if padLen < 0 {
