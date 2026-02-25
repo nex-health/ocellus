@@ -42,8 +42,17 @@ func (s *AutoSource) QueryPeers(ctx context.Context, client PodExecer, ciliumPod
 	// Try JSON.
 	results, err := (&JSONSource{}).QueryPeers(ctx, client, ciliumPod, podIPs, filter)
 	if err == nil {
-		s.preferred = "json"
-		return results, nil
+		// Verify JSON actually produced results. If it parsed successfully
+		// but returned zero peers, the JSON format likely doesn't match our
+		// structs (field names, encoding, etc.) — fall back to text.
+		total := 0
+		for _, peers := range results {
+			total += len(peers)
+		}
+		if total > 0 {
+			s.preferred = "json"
+			return results, nil
+		}
 	}
 
 	// Fall back to text.

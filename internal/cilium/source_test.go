@@ -55,6 +55,37 @@ func TestAutoSourceFallsBackToText(t *testing.T) {
 	}
 }
 
+func TestAutoSourceFallsBackWhenJSONReturnsZeroPeers(t *testing.T) {
+	callCount := 0
+	client := &mockPodExecer{
+		execFn: func(_, _, _ string, cmd []string) (string, error) {
+			callCount++
+			for _, arg := range cmd {
+				if arg == "json" {
+					// JSON succeeds but returns empty array (format mismatch).
+					return "[]", nil
+				}
+			}
+			return sampleCTOutput, nil
+		},
+	}
+	src := NewAutoSource()
+	results, err := src.QueryPeers(context.Background(), client, "cilium-abc", []string{"10.4.34.6"}, Filter{PortMin: 4143, PortMax: 4143})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	peers := results["10.4.34.6"]
+	if len(peers) != 3 {
+		t.Fatalf("expected 3 peers from text fallback, got %d", len(peers))
+	}
+	if callCount != 2 {
+		t.Errorf("expected 2 exec calls (json attempt + text fallback), got %d", callCount)
+	}
+	if src.preferred != "text" {
+		t.Errorf("preferred = %q, want \"text\"", src.preferred)
+	}
+}
+
 func TestAutoSourceRemembersPreference(t *testing.T) {
 	callCount := 0
 	client := &mockPodExecer{
