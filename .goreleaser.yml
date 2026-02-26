@@ -25,8 +25,26 @@ checksum:
 
 changelog:
   sort: asc
+  use: github
+  abbrev: -1
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))?!?:.+$'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^.*?fix(\(.+\))?!?:.+$'
+      order: 1
+    - title: Refactoring
+      regexp: '^.*?refactor(\(.+\))?!?:.+$'
+      order: 2
+    - title: Dependencies
+      regexp: '^.*?deps(\(.+\))?!?:.+$'
+      order: 3
+    - title: Other
+      order: 999
   filters:
     exclude:
       - "^docs:"
       - "^test:"
       - "^ci:"
+      - "^chore:"
