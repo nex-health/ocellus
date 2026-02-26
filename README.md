@@ -1,5 +1,11 @@
 # Ocellus
 
+[![CI](https://github.com/nex-health/ocellus/actions/workflows/ci.yml/badge.svg)](https://github.com/nex-health/ocellus/actions/workflows/ci.yml)
+[![Release](https://github.com/nex-health/ocellus/actions/workflows/release.yml/badge.svg)](https://github.com/nex-health/ocellus/actions/workflows/release.yml)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/nex-health/ocellus)](https://go.dev/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub Release](https://img.shields.io/github/v/release/nex-health/ocellus)](https://github.com/nex-health/ocellus/releases/latest)
+
 A TUI tool for monitoring connections to Kubernetes pods via Cilium's BPF conntrack tables.
 
 ## Motivation
@@ -241,14 +247,3 @@ The release changelog is generated automatically from commit messages. Commits p
 - `deps:` — dependency updates
 - `chore:` — maintenance tasks
 
-### Fixing a bad release
-
-If a release needs to be yanked:
-
-```sh
-# Delete the tag locally and remotely
-git tag -d v0.3.0
-git push origin :refs/tags/v0.3.0
-```
-
-Then delete the draft/published release from the GitHub UI and re-tag when ready.
