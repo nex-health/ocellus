@@ -92,38 +92,50 @@ type parsedKey struct {
 	ipVersion string // "4" or "6"
 }
 
-// parseKey4 extracts fields from a TupleKey4 entry.
-func parseKey4(k *tupleKey4) (*parsedKey, error) {
-	isIn := k.Flags&0x01 != 0
+// tupleFields holds the common fields shared by TupleKey4 and TupleKey6.
+type tupleFields struct {
+	DestAddr   string
+	SourceAddr string
+	DestPort   uint16
+	SourcePort uint16
+	NextHeader uint8
+	Flags      uint8
+}
+
+type ipDecoder func(string) (net.IP, error)
+
+// parseKey extracts fields from a tuple key using the given IP decoder and version.
+func parseKey(tf tupleFields, decode ipDecoder, ipVersion string) (*parsedKey, error) {
+	isIn := tf.Flags&0x01 != 0
 
 	var proto string
-	switch k.NextHeader {
+	switch tf.NextHeader {
 	case 6:
 		proto = "TCP"
 	case 17:
 		proto = "UDP"
 	default:
-		return nil, fmt.Errorf("unsupported protocol %d", k.NextHeader)
+		return nil, fmt.Errorf("unsupported protocol %d", tf.NextHeader)
 	}
 
 	var podIPField, peerIPField string
 	var peerPortField uint16
 	if isIn {
-		podIPField = k.DestAddr
-		peerIPField = k.SourceAddr
-		peerPortField = k.SourcePort
+		podIPField = tf.DestAddr
+		peerIPField = tf.SourceAddr
+		peerPortField = tf.SourcePort
 	} else {
-		podIPField = k.SourceAddr
-		peerIPField = k.DestAddr
-		peerPortField = k.DestPort
+		podIPField = tf.SourceAddr
+		peerIPField = tf.DestAddr
+		peerPortField = tf.DestPort
 	}
 
-	podIPDecoded, err := decodeIPv4(podIPField)
+	podIP, err := decode(podIPField)
 	if err != nil {
 		return nil, err
 	}
 
-	peerIP, err := decodeIPv4(peerIPField)
+	peerIP, err := decode(peerIPField)
 	if err != nil {
 		return nil, err
 	}
@@ -131,59 +143,28 @@ func parseKey4(k *tupleKey4) (*parsedKey, error) {
 	return &parsedKey{
 		isIn:      isIn,
 		proto:     proto,
-		podIP:     podIPDecoded,
+		podIP:     podIP,
 		peerIP:    peerIP,
-		dstPort:   int(ntohs(k.DestPort)),
+		dstPort:   int(ntohs(tf.DestPort)),
 		peerPort:  int(ntohs(peerPortField)),
-		ipVersion: "4",
+		ipVersion: ipVersion,
 	}, nil
 }
 
-// parseKey6 extracts fields from a TupleKey6 entry.
+func parseKey4(k *tupleKey4) (*parsedKey, error) {
+	return parseKey(tupleFields{
+		DestAddr: k.DestAddr, SourceAddr: k.SourceAddr,
+		DestPort: k.DestPort, SourcePort: k.SourcePort,
+		NextHeader: k.NextHeader, Flags: k.Flags,
+	}, decodeIPv4, "4")
+}
+
 func parseKey6(k *tupleKey6) (*parsedKey, error) {
-	isIn := k.Flags&0x01 != 0
-
-	var proto string
-	switch k.NextHeader {
-	case 6:
-		proto = "TCP"
-	case 17:
-		proto = "UDP"
-	default:
-		return nil, fmt.Errorf("unsupported protocol %d", k.NextHeader)
-	}
-
-	var podIPField, peerIPField string
-	var peerPortField uint16
-	if isIn {
-		podIPField = k.DestAddr
-		peerIPField = k.SourceAddr
-		peerPortField = k.SourcePort
-	} else {
-		podIPField = k.SourceAddr
-		peerIPField = k.DestAddr
-		peerPortField = k.DestPort
-	}
-
-	podIPDecoded, err := decodeIPv6(podIPField)
-	if err != nil {
-		return nil, err
-	}
-
-	peerIP, err := decodeIPv6(peerIPField)
-	if err != nil {
-		return nil, err
-	}
-
-	return &parsedKey{
-		isIn:      isIn,
-		proto:     proto,
-		podIP:     podIPDecoded,
-		peerIP:    peerIP,
-		dstPort:   int(ntohs(k.DestPort)),
-		peerPort:  int(ntohs(peerPortField)),
-		ipVersion: "6",
-	}, nil
+	return parseKey(tupleFields{
+		DestAddr: k.DestAddr, SourceAddr: k.SourceAddr,
+		DestPort: k.DestPort, SourcePort: k.SourcePort,
+		NextHeader: k.NextHeader, Flags: k.Flags,
+	}, decodeIPv6, "6")
 }
 
 // ParseJSONCTOutput parses the JSON output of "cilium bpf ct list global -o json"
