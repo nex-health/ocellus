@@ -22,6 +22,12 @@ import (
 
 var version = "dev"
 
+// exitError prints an error message to stderr and exits with code 1.
+func exitError(err error) {
+	fmt.Fprintf(os.Stderr, "error: %v\n", err)
+	os.Exit(1)
+}
+
 func main() {
 	// Silence klog to prevent client-go log messages from corrupting the TUI.
 	klog.SetOutput(io.Discard)
@@ -73,39 +79,33 @@ func main() {
 		IPVersion: *ipVersion,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		exitError(err)
 	}
 
 	target, err := k8s.ParseTarget(args[0])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		exitError(err)
 	}
 
 	client, err := k8s.NewClient(*kubeconfig)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		exitError(err)
 	}
 
 	ctx := context.Background()
 
 	if err := cilium.CheckInstalled(ctx, client); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		exitError(err)
 	}
 
 	pods, err := k8s.DiscoverPods(ctx, client, *namespace, target)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		exitError(err)
 	}
 
 	if *dump {
 		if err := runDumpMode(client, cilium.NewAutoSource(), filter, pods, *outputFormat, *outputFile, *repeat, *timeout); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
+			exitError(err)
 		}
 		return
 	}
@@ -143,8 +143,7 @@ func main() {
 	}
 
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		exitError(err)
 	}
 	if fm, ok := finalModel.(tui.Model); ok {
 		fm.CloseRecorder()
