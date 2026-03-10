@@ -102,8 +102,8 @@ func TestParseJSONCTOutput_DirectionOut(t *testing.T) {
 				TupleKey4: &tupleKey4{
 					DestAddr:   encodeIPv4(10, 4, 166, 193), // remote
 					SourceAddr: encodeIPv4(10, 4, 34, 6),    // pod
-					DestPort:   networkPort(5432),            // remote port
-					SourcePort: networkPort(52628),           // pod ephemeral port
+					DestPort:   networkPort(5432),           // remote port
+					SourcePort: networkPort(52628),          // pod ephemeral port
 					NextHeader: 6,
 					Flags:      2, // OUT direction (bit 0 not set)
 				},

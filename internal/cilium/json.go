@@ -83,13 +83,13 @@ func ntohs(port uint16) uint16 {
 
 // parsedKey holds the extracted fields from either a TupleKey4 or TupleKey6.
 type parsedKey struct {
-	isIn       bool
-	proto      string
-	podIP      net.IP
-	peerIP     net.IP
-	dstPort    int // ntohs(DestPort)
-	peerPort   int
-	ipVersion  string // "4" or "6"
+	isIn      bool
+	proto     string
+	podIP     net.IP
+	peerIP    net.IP
+	dstPort   int // ntohs(DestPort)
+	peerPort  int
+	ipVersion string // "4" or "6"
 }
 
 // parseKey4 extracts fields from a TupleKey4 entry.

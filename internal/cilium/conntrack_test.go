@@ -60,7 +60,7 @@ func TestParseCTOutput_ExcludesOUT(t *testing.T) {
 
 func TestParseCTOutput_DirectionOut(t *testing.T) {
 	peers := ParseCTOutput(sampleCTOutput, "10.4.34.6", Filter{
-		PortMin:    4143, PortMax: 4143,
+		PortMin: 4143, PortMax: 4143,
 		Directions: []string{"out"},
 		States:     []string{"all"},
 	})
