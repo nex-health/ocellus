@@ -3,7 +3,6 @@ set -euo pipefail
 
 CLUSTER_NAME="${KIND_CLUSTER_NAME:-ocellus-e2e}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 usage() {
   echo "Usage: $0 {up|down}" >&2
