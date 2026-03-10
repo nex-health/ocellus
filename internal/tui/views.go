@@ -180,22 +180,81 @@ func (m Model) viewHelp(w int) string {
 	return b.String()
 }
 
-func (m Model) viewPodList(w int) string {
-	var b strings.Builder
-
-	m.renderHeader(&b, w)
-
-	// Compute max pod name width for alignment.
-	maxNameW := 0
+func (m Model) maxPodNameWidth() int {
+	maxW := 0
 	for _, p := range m.config.Pods {
 		name := p.Name
 		if m.exited[p.Name] {
 			name += " (exited)"
 		}
-		if len(name) > maxNameW {
-			maxNameW = len(name)
+		if len(name) > maxW {
+			maxW = len(name)
 		}
 	}
+	return maxW
+}
+
+func (m Model) podCountText(peerCount int, totalBytes uint64) string {
+	switch {
+	case m.timestamp.IsZero():
+		return "…"
+	case peerCount == 1:
+		text := "1 peer"
+		if totalBytes > 0 {
+			text += "  " + format.Bytes(totalBytes)
+		}
+		return text
+	default:
+		text := fmt.Sprintf("%d peers", peerCount)
+		if totalBytes > 0 {
+			text += "  " + format.Bytes(totalBytes)
+		}
+		return text
+	}
+}
+
+func (m Model) renderPodRow(b *strings.Builder, w, i, maxNameW int) {
+	p := m.config.Pods[i]
+	filtered := m.filteredPeers(m.peers[p.Name])
+	peerCount := len(filtered)
+
+	name := p.Name
+	if m.exited[p.Name] {
+		name += " (exited)"
+	}
+
+	var totalBytes uint64
+	for _, peer := range filtered {
+		totalBytes += peer.Bytes
+	}
+
+	countText := m.podCountText(peerCount, totalBytes)
+
+	if i == m.cursor {
+		icon := "●"
+		line := fmt.Sprintf("  %s %-*s  %s", icon, maxNameW, name, countText)
+		b.WriteString(selectedRowStyle.Width(w).Render(line))
+	} else {
+		icon := activeIcon.String()
+		if m.exited[p.Name] {
+			icon = exitedIcon.String()
+		}
+		countStr := peerCountStyle.Render(countText)
+		if peerCount > 0 && !m.timestamp.IsZero() {
+			countStr = peerCountActiveStyle.Render(countText)
+		}
+		line := fmt.Sprintf("  %s %-*s  %s", icon, maxNameW, name, countStr)
+		b.WriteString(rowStyle.Width(w).Render(line))
+	}
+	b.WriteString("\n")
+}
+
+func (m Model) viewPodList(w int) string {
+	var b strings.Builder
+
+	m.renderHeader(&b, w)
+
+	maxNameW := m.maxPodNameWidth()
 
 	// Pod table rows (scrollable).
 	paneH := m.podPaneHeight()
@@ -203,54 +262,7 @@ func (m Model) viewPodList(w int) string {
 	end := min(start+paneH, len(m.config.Pods))
 
 	for i := start; i < end; i++ {
-		p := m.config.Pods[i]
-		filtered := m.filteredPeers(m.peers[p.Name])
-		peerCount := len(filtered)
-
-		name := p.Name
-		if m.exited[p.Name] {
-			name += " (exited)"
-		}
-
-		var totalBytes uint64
-		for _, peer := range filtered {
-			totalBytes += peer.Bytes
-		}
-
-		var countText string
-		switch {
-		case m.timestamp.IsZero():
-			countText = "…"
-		case peerCount == 1:
-			countText = "1 peer"
-			if totalBytes > 0 {
-				countText += "  " + format.Bytes(totalBytes)
-			}
-		default:
-			countText = fmt.Sprintf("%d peers", peerCount)
-			if totalBytes > 0 {
-				countText += "  " + format.Bytes(totalBytes)
-			}
-		}
-
-		if i == m.cursor {
-			// Selected row: plain text with highlight background, no inline ANSI.
-			icon := "●"
-			line := fmt.Sprintf("  %s %-*s  %s", icon, maxNameW, name, countText)
-			b.WriteString(selectedRowStyle.Width(w).Render(line))
-		} else {
-			icon := activeIcon.String()
-			if m.exited[p.Name] {
-				icon = exitedIcon.String()
-			}
-			countStr := peerCountStyle.Render(countText)
-			if peerCount > 0 && !m.timestamp.IsZero() {
-				countStr = peerCountActiveStyle.Render(countText)
-			}
-			line := fmt.Sprintf("  %s %-*s  %s", icon, maxNameW, name, countStr)
-			b.WriteString(rowStyle.Width(w).Render(line))
-		}
-		b.WriteString("\n")
+		m.renderPodRow(&b, w, i, maxNameW)
 	}
 
 	// Fill remaining space.
@@ -278,6 +290,155 @@ func (m Model) viewPodList(w int) string {
 	return b.String()
 }
 
+type peerColumnWidths struct {
+	peerColW  int
+	localColW int
+	bytesColW int
+	bytesStrs []string
+}
+
+func computePeerColumnWidths(peers []cilium.Peer, podIP string) peerColumnWidths {
+	cw := peerColumnWidths{
+		peerColW:  len("Peer Address:Port"),
+		localColW: len("Local Address:Port"),
+		bytesColW: len("Rx/Tx"),
+		bytesStrs: make([]string, len(peers)),
+	}
+	for i, p := range peers {
+		if len(p.Src) > cw.peerColW {
+			cw.peerColW = len(p.Src)
+		}
+		local := fmt.Sprintf("%s:%d", podIP, p.DstPort)
+		if len(local) > cw.localColW {
+			cw.localColW = len(local)
+		}
+		bs := formatPeerBytes(p)
+		cw.bytesStrs[i] = bs
+		if len(bs) > cw.bytesColW {
+			cw.bytesColW = len(bs)
+		}
+	}
+	return cw
+}
+
+func (m Model) renderPeerColumnHeader(b *strings.Builder, cw peerColumnWidths) (padSrc, padLocal int) {
+	arrow := "▲"
+	if m.sortReverse {
+		arrow = "▼"
+	}
+	styledArrow := " " + sortArrowStyle.Render(arrow)
+	arrowW := lipgloss.Width(styledArrow)
+
+	srcLabel := "Peer Address:Port"
+	localLabel := "Local Address:Port"
+	protoLabel := "Proto"
+	dirLabel := "Dir"
+	stateLabel := "State"
+	bytesLabel := "Rx/Tx"
+
+	padSrc = cw.peerColW
+	padLocal = cw.localColW
+	switch m.sortField {
+	case sortSrc:
+		srcLabel += styledArrow
+		padSrc = cw.peerColW + arrowW
+	case sortPort:
+		localLabel += styledArrow
+		padLocal = cw.localColW + arrowW
+	case sortProto:
+		protoLabel += styledArrow
+	case sortDir:
+		dirLabel += styledArrow
+	case sortState:
+		stateLabel += styledArrow
+	case sortBytes:
+		bytesLabel += styledArrow
+	}
+
+	srcPad := padSrc - lipgloss.Width(srcLabel)
+	if srcPad > 0 {
+		srcLabel += strings.Repeat(" ", srcPad)
+	}
+	localPad := padLocal - lipgloss.Width(localLabel)
+	if localPad > 0 {
+		localLabel += strings.Repeat(" ", localPad)
+	}
+
+	hdr := fmt.Sprintf("  %s  %s  %-5s  %-3s  %-11s  %-*s",
+		srcLabel, localLabel, protoLabel, dirLabel, stateLabel, cw.bytesColW, bytesLabel)
+	b.WriteString(columnHeaderStyle.Render(hdr))
+	b.WriteString("\n")
+	return padSrc, padLocal
+}
+
+func (m Model) renderPeerRow(b *strings.Builder, p cilium.Peer, podIP, bytesStr string, padSrc, padLocal int, cw peerColumnWidths) {
+	local := fmt.Sprintf("%s:%d", podIP, p.DstPort)
+
+	var stateStr string
+	switch p.State {
+	case cilium.StateEstablished:
+		stateStr = stateEstablishedStyle.Render(fmt.Sprintf("%-11s", p.State))
+	case cilium.StateClosing:
+		stateStr = stateClosingStyle.Render(fmt.Sprintf("%-11s", p.State))
+	default:
+		stateStr = fmt.Sprintf("%-11s", p.State)
+	}
+
+	srcStr := highlightMatch(p.Src, m.searchQuery)
+	srcPadding := padSrc - lipgloss.Width(srcStr)
+	if srcPadding > 0 {
+		srcStr += strings.Repeat(" ", srcPadding)
+	}
+
+	var dirStr string
+	switch p.Direction {
+	case cilium.DirIn:
+		dirStr = dirInStyle.Render(fmt.Sprintf("%-3s", "IN"))
+	case cilium.DirOut:
+		dirStr = dirOutStyle.Render(fmt.Sprintf("%-3s", "OUT"))
+	default:
+		dirStr = fmt.Sprintf("%-3s", p.Direction)
+	}
+
+	row := fmt.Sprintf("  %s  %-*s  %-5s  %s  %s  %-*s",
+		srcStr,
+		padLocal, local,
+		p.Proto,
+		dirStr,
+		stateStr,
+		cw.bytesColW, bytesStr)
+	b.WriteString(detailPeerStyle.Render(row))
+	b.WriteString("\n")
+}
+
+func (m Model) renderPeerStatusBar(b *strings.Builder, w int) {
+	if m.searching {
+		searchText := fmt.Sprintf("  /%s_", m.searchQuery)
+		padLen := max(w-lipgloss.Width(searchText)-2, 0)
+		b.WriteString(searchBarStyle.Width(w).Render(searchText + strings.Repeat(" ", padLen)))
+		return
+	}
+
+	scrollInfo := ""
+	maxScroll := m.maxScroll()
+	if maxScroll > 0 {
+		scrollInfo = fmt.Sprintf("  [%d/%d]", m.scroll+1, maxScroll+1)
+	}
+
+	keys := fmt.Sprintf("  %s back  %s scroll  %s sort  %s filter  %s dir  %s ip  %s search  %s pause  %s quit%s",
+		statusBarKeyStyle.Render("esc"),
+		statusBarKeyStyle.Render("j/k"),
+		statusBarKeyStyle.Render("s/S"),
+		statusBarKeyStyle.Render("f/F"),
+		statusBarKeyStyle.Render("D"),
+		statusBarKeyStyle.Render("V"),
+		statusBarKeyStyle.Render("/"),
+		statusBarKeyStyle.Render("p"),
+		statusBarKeyStyle.Render("q"),
+		scrollInfo)
+	m.renderStatusBar(b, w, keys)
+}
+
 func (m Model) viewPeerList(w int) string {
 	var b strings.Builder
 
@@ -293,134 +454,23 @@ func (m Model) viewPeerList(w int) string {
 	filtered := m.filteredPeers(allPeers)
 	peers := sortPeers(filtered, m.sortField, m.sortReverse)
 
-	// Subheader.
 	m.renderPeerSubheader(&b, selected.Name, len(allPeers), len(peers))
 
 	if len(peers) == 0 {
 		b.WriteString(detailPeerStyle.Render("(none)"))
 		b.WriteString("\n")
 	} else {
-		// Compute column widths.
-		peerColW := len("Peer Address:Port")
-		localColW := len("Local Address:Port")
-		bytesColW := len("Rx/Tx")
-		bytesStrs := make([]string, len(peers))
-		for i, p := range peers {
-			if len(p.Src) > peerColW {
-				peerColW = len(p.Src)
-			}
-			local := fmt.Sprintf("%s:%d", selected.IP, p.DstPort)
-			if len(local) > localColW {
-				localColW = len(local)
-			}
-			bs := formatPeerBytes(p)
-			bytesStrs[i] = bs
-			if len(bs) > bytesColW {
-				bytesColW = len(bs)
-			}
-		}
+		cw := computePeerColumnWidths(peers, selected.IP)
+		padSrc, padLocal := m.renderPeerColumnHeader(&b, cw)
 
-		// Column header with sort indicators.
-		arrow := "▲"
-		if m.sortReverse {
-			arrow = "▼"
-		}
-		styledArrow := " " + sortArrowStyle.Render(arrow)
-		arrowW := lipgloss.Width(styledArrow)
-
-		srcLabel := "Peer Address:Port"
-		localLabel := "Local Address:Port"
-		protoLabel := "Proto"
-		dirLabel := "Dir"
-		stateLabel := "State"
-		bytesLabel := "Rx/Tx"
-
-		// Add arrow to active sort column.
-		padSrc := peerColW
-		padLocal := localColW
-		switch m.sortField {
-		case sortSrc:
-			srcLabel += styledArrow
-			padSrc = peerColW + arrowW
-		case sortPort:
-			localLabel += styledArrow
-			padLocal = localColW + arrowW
-		case sortProto:
-			protoLabel += styledArrow
-		case sortDir:
-			dirLabel += styledArrow
-		case sortState:
-			stateLabel += styledArrow
-		case sortBytes:
-			bytesLabel += styledArrow
-		}
-
-		// Use padded widths (which include arrow width) for both header and data rows.
-		srcPad := padSrc - lipgloss.Width(srcLabel)
-		if srcPad > 0 {
-			srcLabel += strings.Repeat(" ", srcPad)
-		}
-		localPad := padLocal - lipgloss.Width(localLabel)
-		if localPad > 0 {
-			localLabel += strings.Repeat(" ", localPad)
-		}
-
-		hdr := fmt.Sprintf("  %s  %s  %-5s  %-3s  %-11s  %-*s",
-			srcLabel, localLabel, protoLabel, dirLabel, stateLabel, bytesColW, bytesLabel)
-		b.WriteString(columnHeaderStyle.Render(hdr))
-		b.WriteString("\n")
-
-		// Data rows (scrollable).
 		paneH := m.peerPaneHeight()
 		start := min(m.scroll, len(peers))
 		end := min(start+paneH, len(peers))
 		visible := peers[start:end]
 		for vi, p := range visible {
-			local := fmt.Sprintf("%s:%d", selected.IP, p.DstPort)
-
-			// State with color.
-			var stateStr string
-			switch p.State {
-			case "established":
-				stateStr = stateEstablishedStyle.Render(fmt.Sprintf("%-11s", p.State))
-			case "closing":
-				stateStr = stateClosingStyle.Render(fmt.Sprintf("%-11s", p.State))
-			default:
-				stateStr = fmt.Sprintf("%-11s", p.State)
-			}
-
-			// Highlight search match in Src column.
-			srcStr := highlightMatch(p.Src, m.searchQuery)
-			srcPadding := padSrc - lipgloss.Width(srcStr)
-			if srcPadding > 0 {
-				srcStr += strings.Repeat(" ", srcPadding)
-			}
-
-			bytesStr := bytesStrs[start+vi]
-
-			// Direction with color.
-			var dirStr string
-			switch p.Direction {
-			case "in":
-				dirStr = dirInStyle.Render(fmt.Sprintf("%-3s", "IN"))
-			case "out":
-				dirStr = dirOutStyle.Render(fmt.Sprintf("%-3s", "OUT"))
-			default:
-				dirStr = fmt.Sprintf("%-3s", p.Direction)
-			}
-
-			row := fmt.Sprintf("  %s  %-*s  %-5s  %s  %s  %-*s",
-				srcStr,
-				padLocal, local,
-				p.Proto,
-				dirStr,
-				stateStr,
-				bytesColW, bytesStr)
-			b.WriteString(detailPeerStyle.Render(row))
-			b.WriteString("\n")
+			m.renderPeerRow(&b, p, selected.IP, cw.bytesStrs[start+vi], padSrc, padLocal, cw)
 		}
 
-		// Fill remaining space.
 		for i := len(visible); i < paneH; i++ {
 			b.WriteString("\n")
 		}
@@ -429,31 +479,7 @@ func (m Model) viewPeerList(w int) string {
 	b.WriteString(dividerStyle.Render(strings.Repeat("─", w)))
 	b.WriteString("\n")
 
-	// Status bar.
-	if m.searching {
-		searchText := fmt.Sprintf("  /%s_", m.searchQuery)
-		padLen := max(w-lipgloss.Width(searchText)-2, 0)
-		b.WriteString(searchBarStyle.Width(w).Render(searchText + strings.Repeat(" ", padLen)))
-	} else {
-		scrollInfo := ""
-		maxScroll := m.maxScroll()
-		if maxScroll > 0 {
-			scrollInfo = fmt.Sprintf("  [%d/%d]", m.scroll+1, maxScroll+1)
-		}
-
-		keys := fmt.Sprintf("  %s back  %s scroll  %s sort  %s filter  %s dir  %s ip  %s search  %s pause  %s quit%s",
-			statusBarKeyStyle.Render("esc"),
-			statusBarKeyStyle.Render("j/k"),
-			statusBarKeyStyle.Render("s/S"),
-			statusBarKeyStyle.Render("f/F"),
-			statusBarKeyStyle.Render("D"),
-			statusBarKeyStyle.Render("V"),
-			statusBarKeyStyle.Render("/"),
-			statusBarKeyStyle.Render("p"),
-			statusBarKeyStyle.Render("q"),
-			scrollInfo)
-		m.renderStatusBar(&b, w, keys)
-	}
+	m.renderPeerStatusBar(&b, w)
 
 	return b.String()
 }
