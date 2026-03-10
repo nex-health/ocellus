@@ -46,34 +46,15 @@ func Once(ctx context.Context, p Params) capture.Snapshot {
 		wg.Add(1)
 		go func(node string, nodePods []k8s.PodInfo) {
 			defer wg.Done()
-			nodeCtx := ctx
-			if p.Timeout > 0 {
-				var cancel context.CancelFunc
-				nodeCtx, cancel = context.WithTimeout(ctx, p.Timeout)
-				defer cancel()
-			}
-			agentName, err := cilium.FindCiliumAgent(nodeCtx, p.Client, node)
-			if err != nil {
-				mu.Lock()
-				pollErrors = append(pollErrors, fmt.Sprintf("node %s: %v", node, err))
-				mu.Unlock()
-				return
-			}
-			podIPs := make([]string, len(nodePods))
-			for i, pod := range nodePods {
-				podIPs[i] = pod.IP
-			}
-			results, err := p.Source.QueryPeers(nodeCtx, p.Client, agentName, podIPs, p.Filter)
-			if err != nil {
-				mu.Lock()
-				pollErrors = append(pollErrors, fmt.Sprintf("node %s: %v", node, err))
-				mu.Unlock()
-				return
-			}
+			peers, err := pollNode(ctx, p, node, nodePods)
 			mu.Lock()
-			for _, pod := range nodePods {
-				if peers, ok := results[pod.IP]; ok {
-					peerResults[pod.Name] = peers
+			if err != nil {
+				pollErrors = append(pollErrors, fmt.Sprintf("node %s: %v", node, err))
+			} else {
+				for _, pod := range nodePods {
+					if p, ok := peers[pod.IP]; ok {
+						peerResults[pod.Name] = p
+					}
 				}
 			}
 			mu.Unlock()
@@ -86,4 +67,22 @@ func Once(ctx context.Context, p Params) capture.Snapshot {
 		Pods:      peerResults,
 		Errors:    pollErrors,
 	}
+}
+
+func pollNode(ctx context.Context, p Params, node string, nodePods []k8s.PodInfo) (map[string][]cilium.Peer, error) {
+	nodeCtx := ctx
+	if p.Timeout > 0 {
+		var cancel context.CancelFunc
+		nodeCtx, cancel = context.WithTimeout(ctx, p.Timeout)
+		defer cancel()
+	}
+	agentName, err := cilium.FindCiliumAgent(nodeCtx, p.Client, node)
+	if err != nil {
+		return nil, err
+	}
+	podIPs := make([]string, len(nodePods))
+	for i, pod := range nodePods {
+		podIPs[i] = pod.IP
+	}
+	return p.Source.QueryPeers(nodeCtx, p.Client, agentName, podIPs, p.Filter)
 }

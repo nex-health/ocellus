@@ -143,6 +143,41 @@ func (m *Model) ensureRecorder() error {
 	return nil
 }
 
+func (m *Model) handleDumpKey() {
+	if err := m.ensureRecorder(); err != nil {
+		m.dumpStatus = fmt.Sprintf("dump error: %v", err)
+		m.dumpStatusT = time.Now()
+		return
+	}
+	snap := capture.Snapshot{
+		Timestamp: m.timestamp,
+		Pods:      m.peers,
+		Exited:    m.exited,
+		Errors:    m.lastErrors,
+	}
+	if err := m.recorder.DumpSnapshot(snap); err != nil {
+		m.dumpStatus = fmt.Sprintf("dump error: %v", err)
+	} else {
+		m.dumpStatus = fmt.Sprintf("snapshot saved to %s", m.recorder.Path())
+	}
+	m.dumpStatusT = time.Now()
+}
+
+func (m *Model) handleRecordKey() {
+	if err := m.ensureRecorder(); err != nil {
+		m.dumpStatus = fmt.Sprintf("record error: %v", err)
+		m.dumpStatusT = time.Now()
+		return
+	}
+	m.recorder.SetContinuous(!m.recorder.IsContinuous())
+	if m.recorder.IsContinuous() {
+		m.dumpStatus = fmt.Sprintf("recording to %s", m.recorder.Path())
+	} else {
+		m.dumpStatus = "recording stopped"
+	}
+	m.dumpStatusT = time.Now()
+}
+
 // errorSummary returns a short deduplicated summary of polling errors.
 func errorSummary(errors []string) string {
 	if len(errors) == 0 {
@@ -223,7 +258,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		// Global keybindings.
 		switch msg.String() {
 		case "q", "ctrl+c":
 			m.quitting = true
@@ -243,37 +277,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "d":
-			if err := m.ensureRecorder(); err != nil {
-				m.dumpStatus = fmt.Sprintf("dump error: %v", err)
-				m.dumpStatusT = time.Now()
-				return m, nil
-			}
-			snap := capture.Snapshot{
-				Timestamp: m.timestamp,
-				Pods:      m.peers,
-				Exited:    m.exited,
-				Errors:    m.lastErrors,
-			}
-			if err := m.recorder.DumpSnapshot(snap); err != nil {
-				m.dumpStatus = fmt.Sprintf("dump error: %v", err)
-			} else {
-				m.dumpStatus = fmt.Sprintf("snapshot saved to %s", m.recorder.Path())
-			}
-			m.dumpStatusT = time.Now()
+			m.handleDumpKey()
 			return m, nil
 		case "R":
-			if err := m.ensureRecorder(); err != nil {
-				m.dumpStatus = fmt.Sprintf("record error: %v", err)
-				m.dumpStatusT = time.Now()
-				return m, nil
-			}
-			m.recorder.SetContinuous(!m.recorder.IsContinuous())
-			if m.recorder.IsContinuous() {
-				m.dumpStatus = fmt.Sprintf("recording to %s", m.recorder.Path())
-			} else {
-				m.dumpStatus = "recording stopped"
-			}
-			m.dumpStatusT = time.Now()
+			m.handleRecordKey()
 			return m, nil
 		}
 

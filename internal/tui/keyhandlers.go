@@ -77,29 +77,13 @@ func (m *Model) clampCursor() {
 	}
 }
 
-func (m Model) updatePodList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Handle pending key chord.
-	if m.pendingKey == "g" {
-		m.pendingKey = ""
-		if msg.String() == "g" {
-			m.cursor = 0
-			m.clampPodScroll()
-			return m, nil
-		}
-		// Not 'g' — fall through to normal handling.
-	}
-
+func (m Model) handlePodScroll(msg tea.KeyMsg) (Model, bool) {
 	switch msg.String() {
-	case "g":
-		m.pendingKey = "g"
-		return m, pendingKeyTimeout()
 	case "G":
 		m.cursor = max(len(m.config.Pods)-1, 0)
 		m.clampPodScroll()
-		return m, nil
 	case "ctrl+d":
-		half := m.podPaneHeight() / 2
-		m.cursor += half
+		m.cursor += m.podPaneHeight() / 2
 		if m.cursor >= len(m.config.Pods) {
 			m.cursor = len(m.config.Pods) - 1
 		}
@@ -107,18 +91,14 @@ func (m Model) updatePodList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor = 0
 		}
 		m.clampPodScroll()
-		return m, nil
 	case "ctrl+u":
-		half := m.podPaneHeight() / 2
-		m.cursor -= half
+		m.cursor -= m.podPaneHeight() / 2
 		if m.cursor < 0 {
 			m.cursor = 0
 		}
 		m.clampPodScroll()
-		return m, nil
 	case "H":
 		m.cursor = m.podScroll
-		return m, nil
 	case "M":
 		mid := m.podScroll + m.podPaneHeight()/2
 		if mid >= len(m.config.Pods) {
@@ -128,7 +108,6 @@ func (m Model) updatePodList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			mid = 0
 		}
 		m.cursor = mid
-		return m, nil
 	case "L":
 		bottom := m.podScroll + m.podPaneHeight() - 1
 		if bottom >= len(m.config.Pods) {
@@ -138,23 +117,43 @@ func (m Model) updatePodList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			bottom = 0
 		}
 		m.cursor = bottom
-		return m, nil
 	case "j", "down":
 		if m.cursor < len(m.config.Pods)-1 {
 			m.cursor++
 		}
 		m.clampPodScroll()
-		return m, nil
 	case "k", "up":
 		if m.cursor > 0 {
 			m.cursor--
 		}
 		m.clampPodScroll()
-		return m, nil
+	default:
+		return m, false
+	}
+	return m, true
+}
+
+func (m Model) updatePodList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.pendingKey == "g" {
+		m.pendingKey = ""
+		if msg.String() == "g" {
+			m.cursor = 0
+			m.clampPodScroll()
+			return m, nil
+		}
+	}
+
+	if scrolled, ok := m.handlePodScroll(msg); ok {
+		return scrolled, nil
+	}
+
+	switch msg.String() {
+	case "g":
+		m.pendingKey = "g"
+		return m, pendingKeyTimeout()
 	case "enter":
 		m.mode = viewPeers
 		m.scroll = 0
-		return m, nil
 	case "tab":
 		for offset := 1; offset < len(m.config.Pods); offset++ {
 			idx := (m.cursor + offset) % len(m.config.Pods)
@@ -164,7 +163,6 @@ func (m Model) updatePodList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.clampPodScroll()
-		return m, nil
 	case "shift+tab":
 		for offset := 1; offset < len(m.config.Pods); offset++ {
 			idx := (m.cursor - offset + len(m.config.Pods)) % len(m.config.Pods)
@@ -174,7 +172,6 @@ func (m Model) updatePodList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.clampPodScroll()
-		return m, nil
 	}
 	return m, nil
 }
