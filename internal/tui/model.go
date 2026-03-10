@@ -256,7 +256,16 @@ func (m Model) startPoll() tea.Cmd {
 	// Copy exited to avoid sharing mutable state with the poll goroutine.
 	exitedCopy := make(map[string]bool, len(m.exited))
 	maps.Copy(exitedCopy, m.exited)
-	return pollCmd(m.config.Client, m.config.Source, m.config.Namespace, m.config.Target, m.config.Filter, m.pollTargets(), exitedCopy, m.config.PollTimeout)
+	return pollCmd(pollConfig{
+		client:    m.config.Client,
+		source:    m.config.Source,
+		namespace: m.config.Namespace,
+		target:    m.config.Target,
+		filter:    m.config.Filter,
+		pods:      m.pollTargets(),
+		exited:    exitedCopy,
+		timeout:   m.config.PollTimeout,
+	})
 }
 
 // pollTargets returns the pods to poll based on the current view mode.

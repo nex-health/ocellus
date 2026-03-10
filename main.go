@@ -104,7 +104,16 @@ func main() {
 	}
 
 	if *dump {
-		if err := runDumpMode(client, cilium.NewAutoSource(), filter, pods, *outputFormat, *outputFile, *repeat, *timeout); err != nil {
+		if err := runDumpMode(dumpConfig{
+			client:     client,
+			source:     cilium.NewAutoSource(),
+			filter:     filter,
+			pods:       pods,
+			format:     *outputFormat,
+			outputFile: *outputFile,
+			repeatSec:  *repeat,
+			timeoutSec: *timeout,
+		}); err != nil {
 			exitError(err)
 		}
 		return
@@ -153,19 +162,30 @@ func main() {
 	}
 }
 
-func runDumpMode(client tui.ClusterClient, source cilium.ConntrackSource, filter cilium.Filter, pods []k8s.PodInfo, format, outputFile string, repeatSec, timeoutSec int) error {
+type dumpConfig struct {
+	client     tui.ClusterClient
+	source     cilium.ConntrackSource
+	filter     cilium.Filter
+	pods       []k8s.PodInfo
+	format     string
+	outputFile string
+	repeatSec  int
+	timeoutSec int
+}
+
+func runDumpMode(cfg dumpConfig) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	f, err := capture.NewFormatter(format)
+	f, err := capture.NewFormatter(cfg.format)
 	if err != nil {
 		return err
 	}
 
 	var w capture.Writer
 	var closer func()
-	if outputFile != "" {
-		fw, err := capture.NewFileWriter(outputFile)
+	if cfg.outputFile != "" {
+		fw, err := capture.NewFileWriter(cfg.outputFile)
 		if err != nil {
 			return err
 		}
@@ -181,22 +201,22 @@ func runDumpMode(client tui.ClusterClient, source cilium.ConntrackSource, filter
 	}()
 
 	pollParams := poll.Params{
-		Client:  client,
-		Source:  source,
-		Filter:  filter,
-		Pods:    pods,
-		Timeout: time.Duration(timeoutSec) * time.Second,
+		Client:  cfg.client,
+		Source:  cfg.source,
+		Filter:  cfg.filter,
+		Pods:    cfg.pods,
+		Timeout: time.Duration(cfg.timeoutSec) * time.Second,
 	}
 
 	snap := poll.Once(ctx, pollParams)
 	if err := capture.DumpOnce(f, w, snap); err != nil {
 		return err
 	}
-	if repeatSec <= 0 {
+	if cfg.repeatSec <= 0 {
 		return nil
 	}
 
-	ticker := time.NewTicker(time.Duration(repeatSec) * time.Second)
+	ticker := time.NewTicker(time.Duration(cfg.repeatSec) * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
