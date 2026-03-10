@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   lint-and-test:
@@ -40,7 +41,13 @@ jobs:
           version: v2.10.1
 
       - name: Test
-        run: go test -race ./...
+        run: go test -race -coverprofile=coverage.out ./...
+
+      - name: Upload coverage
+        uses: qltysh/qlty-action/coverage@v2
+        with:
+          oidc: true
+          files: coverage.out
 
       - name: Build
         run: go build ./...
