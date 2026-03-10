@@ -2839,3 +2839,44 @@ func TestIPVerFilterString(t *testing.T) {
 		}
 	}
 }
+
+func TestPollResultRefreshesPodList(t *testing.T) {
+	m := testModel()
+	// Initially 3 pods from testPods().
+	if len(m.config.Pods) != 3 {
+		t.Fatalf("initial pods = %d, want 3", len(m.config.Pods))
+	}
+
+	// Simulate a poll result that discovers a new pod.
+	newPods := []k8s.PodInfo{
+		{Name: "pod-1", Node: "node-a", IP: "10.0.0.1"},
+		{Name: "pod-2", Node: "node-a", IP: "10.0.0.2"},
+		{Name: "pod-3", Node: "node-b", IP: "10.0.0.3"},
+		{Name: "pod-4", Node: "node-b", IP: "10.0.0.4"},
+	}
+	updated, _ := m.Update(pollResultMsg{
+		peers:     map[string][]cilium.Peer{},
+		pods:      newPods,
+		timestamp: time.Now(),
+	})
+	m2 := updated.(Model)
+	if len(m2.config.Pods) != 4 {
+		t.Errorf("pods after refresh = %d, want 4", len(m2.config.Pods))
+	}
+	if m2.config.Pods[3].Name != "pod-4" {
+		t.Errorf("new pod name = %q, want %q", m2.config.Pods[3].Name, "pod-4")
+	}
+}
+
+func TestPollResultNilPodsPreservesList(t *testing.T) {
+	m := testModel()
+	// When pods is nil (discovery error), the pod list should not change.
+	updated, _ := m.Update(pollResultMsg{
+		peers:     map[string][]cilium.Peer{},
+		timestamp: time.Now(),
+	})
+	m2 := updated.(Model)
+	if len(m2.config.Pods) != 3 {
+		t.Errorf("pods after nil refresh = %d, want 3", len(m2.config.Pods))
+	}
+}
