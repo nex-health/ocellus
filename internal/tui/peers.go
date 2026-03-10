@@ -27,7 +27,12 @@ func highlightMatch(text, query string) string {
 
 // filteredPeers returns peers matching the current search query and quick filters.
 func (m Model) filteredPeers(peers []cilium.Peer) []cilium.Peer {
-	if m.searchQuery == "" && m.stateFilter == stateAll && m.protoFilter == protoAll && m.dirFilter == dirAll && m.ipVerFilter == ipVerAll {
+	noFiltersActive := m.searchQuery == "" &&
+		m.stateFilter == stateAll &&
+		m.protoFilter == protoAll &&
+		m.dirFilter == dirAll &&
+		m.ipVerFilter == ipVerAll
+	if noFiltersActive {
 		return peers
 	}
 	q := strings.ToLower(m.searchQuery)

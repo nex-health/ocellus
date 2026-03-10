@@ -402,7 +402,7 @@ func parseCTLine(line, podIP string, filter Filter, ff filterFlags, prefixes []d
 
 	// 4. IP version filter.
 	isV6 := strings.HasPrefix(peerAddr, "[")
-	if isV6 && !ff.wantV6 || !isV6 && !ff.wantV4 {
+	if (isV6 && !ff.wantV6) || (!isV6 && !ff.wantV4) {
 		return nil
 	}
 
