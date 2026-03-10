@@ -313,244 +313,195 @@ func formatAddrPort(host string, port int) string {
 
 // ParseCTOutput parses cilium bpf ct list output and returns unique peers
 // matching the filter for the given podIP.
-func ParseCTOutput(output string, podIP string, filter Filter) []Peer {
-	protos := filter.effectiveProtos()
-	directions := filter.effectiveDirections()
-	ipVersions := filter.effectiveIPVersions()
+// dirPrefix pairs a line prefix string with its direction.
+type dirPrefix struct {
+	prefix string
+	isOut  bool
+}
 
-	// Build IP version set.
-	wantV4, wantV6 := false, false
-	for _, v := range ipVersions {
-		switch v {
-		case "4":
-			wantV4 = true
-		case "6":
-			wantV6 = true
-		}
-	}
-
-	// Build direction set.
-	dirIn := false
-	dirOut := false
-	for _, d := range directions {
-		switch d {
-		case "in":
-			dirIn = true
-		case "out":
-			dirOut = true
-		}
-	}
-
-	// Build prefixes: proto x direction.
-	type dirPrefix struct {
-		prefix string
-		isOut  bool
-	}
+func buildDirPrefixes(protos []string, ff filterFlags) []dirPrefix {
 	var prefixes []dirPrefix
 	for _, p := range protos {
-		if dirIn {
+		if ff.dirIn {
 			prefixes = append(prefixes, dirPrefix{p + " IN ", false})
 		}
-		if dirOut {
+		if ff.dirOut {
 			prefixes = append(prefixes, dirPrefix{p + " OUT ", true})
 		}
 	}
+	return prefixes
+}
 
-	states := filter.effectiveStates()
-	stateAll := false
-	stateClosing := false
-	stateEstablished := false
-	for _, s := range states {
-		switch s {
-		case "all":
-			stateAll = true
-		case "closing":
-			stateClosing = true
-		case "established":
-			stateEstablished = true
+// parseSplitOrCombinedBytes extracts rx/tx byte counts, falling back to
+// combined Bytes field for older Cilium versions.
+func parseSplitOrCombinedBytes(line string) (rx, tx uint64) {
+	rx = parseKVUint(line, "RxBytes")
+	if rx == 0 {
+		rx = parseKVUint(line, "rx_bytes")
+	}
+	tx = parseKVUint(line, "TxBytes")
+	if tx == 0 {
+		tx = parseKVUint(line, "tx_bytes")
+	}
+	if rx == 0 && tx == 0 {
+		total := parseKVUint(line, "Bytes")
+		if total == 0 {
+			total = parseKVUint(line, "bytes")
+		}
+		rx = total
+	}
+	return rx, tx
+}
+
+// parseSplitOrCombinedPackets extracts rx/tx packet counts, falling back to
+// combined Packets field for older Cilium versions.
+func parseSplitOrCombinedPackets(line string) (rx, tx uint64) {
+	rx = parseKVUint(line, "RxPackets")
+	if rx == 0 {
+		rx = parseKVUint(line, "rx_packets")
+	}
+	tx = parseKVUint(line, "TxPackets")
+	if tx == 0 {
+		tx = parseKVUint(line, "tx_packets")
+	}
+	if rx == 0 && tx == 0 {
+		total := parseKVUint(line, "Packets")
+		if total == 0 {
+			total = parseKVUint(line, "packets")
+		}
+		rx = total
+	}
+	return rx, tx
+}
+
+// parseCTLine attempts to parse a single conntrack line and returns a Peer
+// if it matches the filter, or nil if it should be skipped.
+func parseCTLine(line, podIP string, filter Filter, ff filterFlags, prefixes []dirPrefix) *Peer {
+	// 1. Protocol + direction prefix.
+	matchedProto := false
+	isOutDir := false
+	for _, pfx := range prefixes {
+		if strings.HasPrefix(line, pfx.prefix) {
+			matchedProto = true
+			isOutDir = pfx.isOut
+			break
+		}
+	}
+	if !matchedProto {
+		return nil
+	}
+
+	// 2. Extract fields.
+	fields := strings.Fields(line)
+	if len(fields) < 5 {
+		return nil
+	}
+
+	var podAddr, peerAddr string
+	if isOutDir {
+		podAddr = fields[2]
+		peerAddr = fields[4]
+	} else {
+		podAddr = fields[4]
+		peerAddr = fields[2]
+	}
+
+	// 3. Pod IP match.
+	podIPv4Prefix := podIP + ":"
+	podIPv6Prefix := "[" + podIP + "]:"
+	if !strings.HasPrefix(podAddr, podIPv4Prefix) && !strings.HasPrefix(podAddr, podIPv6Prefix) {
+		return nil
+	}
+
+	// 4. IP version filter.
+	isV6 := strings.HasPrefix(peerAddr, "[")
+	if isV6 && !ff.wantV6 || !isV6 && !ff.wantV4 {
+		return nil
+	}
+
+	// 5. State.
+	isClosing := strings.Contains(line, "RxClosing") || strings.Contains(line, "TxClosing")
+	if !ff.matchState(isClosing) {
+		return nil
+	}
+
+	// 6. Port filter.
+	_, dstPort := splitAddrPort(fields[4])
+	if !filter.matchPort(dstPort) {
+		return nil
+	}
+
+	// 7. Source CIDR.
+	if filter.SrcCIDR != nil {
+		srcHost, _ := splitAddrPort(peerAddr)
+		srcIP := net.ParseIP(srcHost)
+		if srcIP == nil || !filter.SrcCIDR.Contains(srcIP) {
+			return nil
 		}
 	}
 
-	// Build pod IP prefix patterns for both v4 and v6 formats.
-	podIPv4Prefix := podIP + ":"
-	podIPv6Prefix := "[" + podIP + "]:"
+	// Build peer.
+	state := "established"
+	if isClosing {
+		state = "closing"
+	}
+	direction := "in"
+	if isOutDir {
+		direction = "out"
+	}
+	ipVersion := "4"
+	if isV6 {
+		ipVersion = "6"
+	}
+
+	rxBytes, txBytes := parseSplitOrCombinedBytes(line)
+	rxPackets, txPackets := parseSplitOrCombinedPackets(line)
+
+	return &Peer{
+		Src:          peerAddr,
+		DstPort:      dstPort,
+		Proto:        fields[0],
+		State:        state,
+		Direction:    direction,
+		IPVersion:    ipVersion,
+		RxBytes:      rxBytes,
+		TxBytes:      txBytes,
+		RxPackets:    rxPackets,
+		TxPackets:    txPackets,
+		Bytes:        rxBytes + txBytes,
+		Packets:      rxPackets + txPackets,
+		Expires:      uint32(parseKVUint(line, "expires")),
+		LastRxReport: uint32(parseKVUint(line, "LastRxReport")),
+		LastTxReport: uint32(parseKVUint(line, "LastTxReport")),
+		RxFlagsSeen:  parseKVHex(line, "RxFlagsSeen"),
+		TxFlagsSeen:  parseKVHex(line, "TxFlagsSeen"),
+	}
+}
+
+// ParseCTOutput parses cilium bpf ct list output and returns unique peers
+// matching the filter for the given podIP.
+func ParseCTOutput(output string, podIP string, filter Filter) []Peer {
+	ff := newFilterFlags(filter)
+	prefixes := buildDirPrefixes(filter.effectiveProtos(), ff)
 
 	seen := make(map[string]bool)
 	var peers []Peer
 
 	for line := range strings.SplitSeq(output, "\n") {
-		// 1. Protocol + direction prefix.
-		matchedProto := false
-		isOutDir := false
-		for _, pfx := range prefixes {
-			if strings.HasPrefix(line, pfx.prefix) {
-				matchedProto = true
-				isOutDir = pfx.isOut
-				break
-			}
-		}
-		if !matchedProto {
+		peer := parseCTLine(line, podIP, filter, ff, prefixes)
+		if peer == nil {
 			continue
 		}
 
-		// 2. Extract fields.
-		fields := strings.Fields(line)
-		if len(fields) < 5 {
-			continue
-		}
-
-		// For IN:  fields[2] = remote (peer), fields[4] = pod (dst)
-		// For OUT: fields[2] = pod (src),     fields[4] = remote (peer)
-		var podAddr, peerAddr string
-		if isOutDir {
-			podAddr = fields[2]
-			peerAddr = fields[4]
-		} else {
-			podAddr = fields[4]
-			peerAddr = fields[2]
-		}
-
-		// 3. Pod IP match — supports both "ip:port" and "[ip]:port".
-		if !strings.HasPrefix(podAddr, podIPv4Prefix) && !strings.HasPrefix(podAddr, podIPv6Prefix) {
-			continue
-		}
-
-		// 4. IP version filter.
-		isV6 := strings.HasPrefix(peerAddr, "[")
-		if isV6 && !wantV6 {
-			continue
-		}
-		if !isV6 && !wantV4 {
-			continue
-		}
-
-		// 5. State detection (always needed for Peer.State).
-		isClosing := strings.Contains(line, "RxClosing") || strings.Contains(line, "TxClosing")
-
-		// 6. State filter.
-		if !stateAll {
-			if stateEstablished && !stateClosing && isClosing {
-				continue
-			}
-			if stateClosing && !stateEstablished && !isClosing {
-				continue
-			}
-		}
-
-		// 7. Port — DstPort is always extracted from fields[4].
-		// For IN:  fields[4] = podIP:podPort → pod's listening port.
-		// For OUT: fields[4] = remoteIP:remotePort → remote destination port.
-		_, dstPort := splitAddrPort(fields[4])
-		if filter.PortMin > 0 || filter.PortMax > 0 {
-			lo := filter.PortMin
-			hi := filter.PortMax
-			if lo == 0 {
-				lo = 1
-			}
-			if hi == 0 {
-				hi = 65535
-			}
-			if dstPort < lo || dstPort > hi {
-				continue
-			}
-		}
-
-		// 8. Source CIDR — applies to the peer address.
-		if filter.SrcCIDR != nil {
-			srcHost, _ := splitAddrPort(peerAddr)
-			srcIP := net.ParseIP(srcHost)
-			if srcIP == nil || !filter.SrcCIDR.Contains(srcIP) {
-				continue
-			}
-		}
-
-		// 9. Dedup + collect (keyed on peer address + direction).
-		dedupKey := peerAddr
-		if dirIn && dirOut {
-			// When showing both directions, same peer can appear as IN and OUT.
-			direction := "in"
-			if isOutDir {
-				direction = "out"
-			}
-			dedupKey = direction + ":" + peerAddr
+		dedupKey := peer.Src
+		if ff.dirIn && ff.dirOut {
+			dedupKey = peer.Direction + ":" + peer.Src
 		}
 		if seen[dedupKey] {
 			continue
 		}
 		seen[dedupKey] = true
-
-		proto := fields[0]
-		state := "established"
-		if isClosing {
-			state = "closing"
-		}
-		direction := "in"
-		if isOutDir {
-			direction = "out"
-		}
-		ipVersion := "4"
-		if isV6 {
-			ipVersion = "6"
-		}
-
-		// Parse rich fields. Cilium versions use different naming:
-		// - Newer: RxBytes, TxBytes, RxPackets, TxPackets
-		// - Older camelCase: Bytes, Packets (combined)
-		// - Some versions: rx_bytes, tx_bytes, rx_packets, tx_packets
-		rxBytes := parseKVUint(line, "RxBytes")
-		if rxBytes == 0 {
-			rxBytes = parseKVUint(line, "rx_bytes")
-		}
-		txBytes := parseKVUint(line, "TxBytes")
-		if txBytes == 0 {
-			txBytes = parseKVUint(line, "tx_bytes")
-		}
-		rxPackets := parseKVUint(line, "RxPackets")
-		if rxPackets == 0 {
-			rxPackets = parseKVUint(line, "rx_packets")
-		}
-		txPackets := parseKVUint(line, "TxPackets")
-		if txPackets == 0 {
-			txPackets = parseKVUint(line, "tx_packets")
-		}
-
-		// Older Cilium uses "Packets" and "Bytes" (combined).
-		totalBytes := parseKVUint(line, "Bytes")
-		if totalBytes == 0 {
-			totalBytes = parseKVUint(line, "bytes")
-		}
-		totalPackets := parseKVUint(line, "Packets")
-		if totalPackets == 0 {
-			totalPackets = parseKVUint(line, "packets")
-		}
-
-		// Prefer split fields; fall back to combined.
-		if rxBytes == 0 && txBytes == 0 && totalBytes > 0 {
-			rxBytes = totalBytes
-		}
-		if rxPackets == 0 && txPackets == 0 && totalPackets > 0 {
-			rxPackets = totalPackets
-		}
-
-		peers = append(peers, Peer{
-			Src:          peerAddr,
-			DstPort:      dstPort,
-			Proto:        proto,
-			State:        state,
-			Direction:    direction,
-			IPVersion:    ipVersion,
-			Bytes:        rxBytes + txBytes,
-			Packets:      rxPackets + txPackets,
-			RxBytes:      rxBytes,
-			TxBytes:      txBytes,
-			RxPackets:    rxPackets,
-			TxPackets:    txPackets,
-			Expires:      uint32(parseKVUint(line, "expires")),
-			LastRxReport: uint32(parseKVUint(line, "LastRxReport")),
-			LastTxReport: uint32(parseKVUint(line, "LastTxReport")),
-			RxFlagsSeen:  parseKVHex(line, "RxFlagsSeen"),
-			TxFlagsSeen:  parseKVHex(line, "TxFlagsSeen"),
-		})
+		peers = append(peers, *peer)
 	}
 
 	sort.Slice(peers, func(i, j int) bool {

@@ -175,45 +175,8 @@ func ParseJSONCTOutput(data string, podIP string, filter Filter) ([]Peer, error)
 		return nil, fmt.Errorf("parse JSON CT output: %w", err)
 	}
 
+	ff := newFilterFlags(filter)
 	protos := filter.effectiveProtos()
-	directions := filter.effectiveDirections()
-	ipVersions := filter.effectiveIPVersions()
-
-	dirIn := false
-	dirOut := false
-	for _, d := range directions {
-		switch d {
-		case "in":
-			dirIn = true
-		case "out":
-			dirOut = true
-		}
-	}
-
-	wantV4, wantV6 := false, false
-	for _, v := range ipVersions {
-		switch v {
-		case "4":
-			wantV4 = true
-		case "6":
-			wantV6 = true
-		}
-	}
-
-	states := filter.effectiveStates()
-	stateAll := false
-	stateClosing := false
-	stateEstablished := false
-	for _, s := range states {
-		switch s {
-		case "all":
-			stateAll = true
-		case "closing":
-			stateClosing = true
-		case "established":
-			stateEstablished = true
-		}
-	}
 
 	seen := make(map[string]bool)
 	var peers []Peer
@@ -223,12 +186,12 @@ func ParseJSONCTOutput(data string, podIP string, filter Filter) ([]Peer, error)
 		var err error
 		switch {
 		case rec.Key.TupleKey4 != nil:
-			if !wantV4 {
+			if !ff.wantV4 {
 				continue
 			}
 			pk, err = parseKey4(rec.Key.TupleKey4)
 		case rec.Key.TupleKey6 != nil:
-			if !wantV6 {
+			if !ff.wantV6 {
 				continue
 			}
 			pk, err = parseKey6(rec.Key.TupleKey6)
@@ -240,10 +203,10 @@ func ParseJSONCTOutput(data string, podIP string, filter Filter) ([]Peer, error)
 		}
 
 		// Direction filter.
-		if pk.isIn && !dirIn {
+		if pk.isIn && !ff.dirIn {
 			continue
 		}
-		if !pk.isIn && !dirOut {
+		if !pk.isIn && !ff.dirOut {
 			continue
 		}
 
@@ -255,19 +218,8 @@ func ParseJSONCTOutput(data string, podIP string, filter Filter) ([]Peer, error)
 			continue
 		}
 
-		// Port filter.
-		if filter.PortMin > 0 || filter.PortMax > 0 {
-			lo := filter.PortMin
-			hi := filter.PortMax
-			if lo == 0 {
-				lo = 1
-			}
-			if hi == 0 {
-				hi = 65535
-			}
-			if pk.dstPort < lo || pk.dstPort > hi {
-				continue
-			}
+		if !filter.matchPort(pk.dstPort) {
+			continue
 		}
 
 		if filter.SrcCIDR != nil && !filter.SrcCIDR.Contains(pk.peerIP) {
@@ -279,13 +231,8 @@ func ParseJSONCTOutput(data string, podIP string, filter Filter) ([]Peer, error)
 		ctFlags := rec.Value.Flags
 		isClosing := ctFlags&0x0001 != 0 || ctFlags&0x0002 != 0
 
-		if !stateAll {
-			if stateEstablished && !stateClosing && isClosing {
-				continue
-			}
-			if stateClosing && !stateEstablished && !isClosing {
-				continue
-			}
+		if !ff.matchState(isClosing) {
+			continue
 		}
 
 		peerAddr := formatAddrPort(pk.peerIP.String(), pk.peerPort)
@@ -297,7 +244,7 @@ func ParseJSONCTOutput(data string, podIP string, filter Filter) ([]Peer, error)
 
 		// Dedup key includes direction when showing both.
 		dedupKey := peerAddr
-		if dirIn && dirOut {
+		if ff.dirIn && ff.dirOut {
 			dedupKey = direction + ":" + peerAddr
 		}
 		if seen[dedupKey] {
