@@ -1,8 +1,6 @@
 config_version = "0"
 
-[[plugin]]
-name = "radarlint-go"
-
-[[plugin.radarlint-go.rules]]
-name = "S100"
-mode = "disabled"
+# Suppress underscored test names (TestFoo_Bar) — deliberate style choice.
+[[triage]]
+match.rules = ["radarlint-go:S100"]
+set.ignored = true
