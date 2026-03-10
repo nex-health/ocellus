@@ -179,34 +179,82 @@ func (m Model) updatePodList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) updatePeerList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Search mode intercepts most keys.
-	if m.searching {
-		switch msg.String() {
-		case "esc":
-			m.searching = false
-			m.searchQuery = ""
+// handleSearchKey processes key input while in search mode.
+func (m Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.searching = false
+		m.searchQuery = ""
+		m.scroll = 0
+	case "enter":
+		m.searching = false
+	case "backspace":
+		if len(m.searchQuery) > 0 {
+			m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
 			m.scroll = 0
-			return m, nil
-		case "enter":
-			m.searching = false
-			return m, nil
-		case "backspace":
-			if len(m.searchQuery) > 0 {
-				m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
-				m.scroll = 0
-			}
-			return m, nil
-		default:
-			if msg.Type == tea.KeyRunes {
-				m.searchQuery += string(msg.Runes)
-				m.scroll = 0
-			}
-			return m, nil
+		}
+	default:
+		if msg.Type == tea.KeyRunes {
+			m.searchQuery += string(msg.Runes)
+			m.scroll = 0
 		}
 	}
+	return m, nil
+}
 
-	// Handle pending key chord (only when not searching).
+// handlePeerScroll processes scroll/navigation keys in the peer list.
+// It returns the updated model and true if a scroll key was handled.
+func (m Model) handlePeerScroll(msg tea.KeyMsg) (Model, bool) {
+	switch msg.String() {
+	case "G":
+		m.scroll = m.maxScroll()
+	case "ctrl+d":
+		m.scroll += m.peerPaneHeight() / 2
+		m.clampScroll()
+	case "ctrl+u":
+		m.scroll -= m.peerPaneHeight() / 2
+		if m.scroll < 0 {
+			m.scroll = 0
+		}
+	case "H":
+		// top of visible — no-op for scroll
+	case "M":
+		m.scroll += m.peerPaneHeight() / 2
+		m.clampScroll()
+	case "L":
+		m.scroll += m.peerPaneHeight() - 1
+		m.clampScroll()
+	case "j", "down":
+		m.scroll++
+		m.clampScroll()
+	case "k", "up":
+		if m.scroll > 0 {
+			m.scroll--
+		}
+	case "pgdown":
+		m.scroll += m.peerPaneHeight()
+		m.clampScroll()
+	case "pgup":
+		m.scroll -= m.peerPaneHeight()
+		if m.scroll < 0 {
+			m.scroll = 0
+		}
+	case "home":
+		m.scroll = 0
+	case "end":
+		m.scroll = m.maxScroll()
+	default:
+		return m, false
+	}
+	m.paused = true
+	return m, true
+}
+
+func (m Model) updatePeerList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.searching {
+		return m.handleSearchKey(msg)
+	}
+
 	if m.pendingKey == "g" {
 		m.pendingKey = ""
 		if msg.String() == "g" {
@@ -214,76 +262,16 @@ func (m Model) updatePeerList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.scroll = 0
 			return m, nil
 		}
-		// Not 'g' — fall through to normal handling.
+	}
+
+	if scrolled, ok := m.handlePeerScroll(msg); ok {
+		return scrolled, nil
 	}
 
 	switch msg.String() {
 	case "g":
 		m.pendingKey = "g"
 		return m, pendingKeyTimeout()
-	case "G":
-		m.paused = true
-		m.scroll = m.maxScroll()
-		return m, nil
-	case "ctrl+d":
-		m.paused = true
-		half := m.peerPaneHeight() / 2
-		m.scroll += half
-		m.clampScroll()
-		return m, nil
-	case "ctrl+u":
-		m.paused = true
-		half := m.peerPaneHeight() / 2
-		m.scroll -= half
-		if m.scroll < 0 {
-			m.scroll = 0
-		}
-		return m, nil
-	case "H":
-		m.paused = true
-		// Already at top of visible — no-op for scroll.
-		return m, nil
-	case "M":
-		m.paused = true
-		m.scroll += m.peerPaneHeight() / 2
-		m.clampScroll()
-		return m, nil
-	case "L":
-		m.paused = true
-		m.scroll += m.peerPaneHeight() - 1
-		m.clampScroll()
-		return m, nil
-	case "j", "down":
-		m.paused = true
-		m.scroll++
-		m.clampScroll()
-		return m, nil
-	case "k", "up":
-		m.paused = true
-		if m.scroll > 0 {
-			m.scroll--
-		}
-		return m, nil
-	case "pgdown":
-		m.paused = true
-		m.scroll += m.peerPaneHeight()
-		m.clampScroll()
-		return m, nil
-	case "pgup":
-		m.paused = true
-		m.scroll -= m.peerPaneHeight()
-		if m.scroll < 0 {
-			m.scroll = 0
-		}
-		return m, nil
-	case "home":
-		m.paused = true
-		m.scroll = 0
-		return m, nil
-	case "end":
-		m.paused = true
-		m.scroll = m.maxScroll()
-		return m, nil
 	case "esc":
 		m.mode = viewPods
 		m.scroll = 0
@@ -292,56 +280,43 @@ func (m Model) updatePeerList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.protoFilter = protoAll
 		m.dirFilter = dirAll
 		m.ipVerFilter = ipVerAll
-		return m, nil
 	case "f":
 		m.stateFilter = (m.stateFilter + 1) % stateFilterCount
 		m.scroll = 0
-		return m, nil
 	case "F":
 		m.protoFilter = (m.protoFilter + 1) % protoFilterCount
 		m.scroll = 0
-		return m, nil
 	case "D":
 		m.dirFilter = (m.dirFilter + 1) % dirFilterCount
 		m.scroll = 0
-		return m, nil
 	case "V":
 		m.ipVerFilter = (m.ipVerFilter + 1) % ipVerFilterCount
 		m.scroll = 0
-		return m, nil
 	case "s":
 		m.sortField = (m.sortField + 1) % sortFieldCount
 		m.scroll = 0
-		return m, nil
 	case "S":
 		m.sortReverse = !m.sortReverse
 		m.scroll = 0
-		return m, nil
 	case "/":
 		m.searching = true
 		m.searchQuery = ""
 		m.scroll = 0
-		return m, nil
 	case "n":
-		// Next: scroll forward by 1 if search is active.
 		if m.searchQuery != "" {
 			m.paused = true
 			m.scroll++
-			peers := m.selectedPeers()
-			if last := len(peers) - 1; last >= 0 && m.scroll > last {
-				m.scroll = last
+			if peers := m.selectedPeers(); len(peers) > 0 && m.scroll > len(peers)-1 {
+				m.scroll = len(peers) - 1
 			}
 		}
-		return m, nil
 	case "N":
-		// Previous: scroll backward by 1 if search is active.
 		if m.searchQuery != "" {
 			m.paused = true
 			if m.scroll > 0 {
 				m.scroll--
 			}
 		}
-		return m, nil
 	}
 	return m, nil
 }
