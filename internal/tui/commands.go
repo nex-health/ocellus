@@ -53,6 +53,7 @@ func pollCmd(client ClusterClient, source cilium.ConntrackSource, namespace stri
 		return pollResultMsg{
 			peers:     snap.Pods,
 			exited:    newExited,
+			pods:      currentPods,
 			timestamp: snap.Timestamp,
 			errors:    snap.Errors,
 		}

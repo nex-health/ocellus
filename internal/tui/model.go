@@ -120,6 +120,7 @@ type tickMsg struct{}
 type pollResultMsg struct {
 	peers     map[string][]cilium.Peer
 	exited    map[string]bool
+	pods      []k8s.PodInfo
 	timestamp time.Time
 	errors    []string
 }
@@ -292,6 +293,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		maps.Copy(m.peers, msg.peers)
 		for name := range msg.exited {
 			m.exited[name] = true
+		}
+		// Refresh the pod list so new pods appear (scaling, rollouts, restarts).
+		if msg.pods != nil {
+			m.config.Pods = msg.pods
 		}
 
 		// Compute total bytes across all pods.
