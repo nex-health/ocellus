@@ -173,6 +173,22 @@ type dumpConfig struct {
 	timeoutSec int
 }
 
+type dumpWriter struct {
+	w     capture.Writer
+	close func()
+}
+
+func newDumpWriter(outputFile string) (dumpWriter, error) {
+	if outputFile != "" {
+		fw, err := capture.NewFileWriter(outputFile)
+		if err != nil {
+			return dumpWriter{}, err
+		}
+		return dumpWriter{w: fw, close: func() { fw.Close() }}, nil
+	}
+	return dumpWriter{w: capture.NewStreamWriter(os.Stdout)}, nil
+}
+
 func runDumpMode(cfg dumpConfig) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -182,23 +198,13 @@ func runDumpMode(cfg dumpConfig) error {
 		return err
 	}
 
-	var w capture.Writer
-	var closer func()
-	if cfg.outputFile != "" {
-		fw, err := capture.NewFileWriter(cfg.outputFile)
-		if err != nil {
-			return err
-		}
-		w = fw
-		closer = func() { fw.Close() }
-	} else {
-		w = capture.NewStreamWriter(os.Stdout)
+	dw, err := newDumpWriter(cfg.outputFile)
+	if err != nil {
+		return err
 	}
-	defer func() {
-		if closer != nil {
-			closer()
-		}
-	}()
+	if dw.close != nil {
+		defer dw.close()
+	}
 
 	pollParams := poll.Params{
 		Client:  cfg.client,
@@ -208,8 +214,7 @@ func runDumpMode(cfg dumpConfig) error {
 		Timeout: time.Duration(cfg.timeoutSec) * time.Second,
 	}
 
-	snap := poll.Once(ctx, pollParams)
-	if err := capture.DumpOnce(f, w, snap); err != nil {
+	if err := capture.DumpOnce(f, dw.w, poll.Once(ctx, pollParams)); err != nil {
 		return err
 	}
 	if cfg.repeatSec <= 0 {
@@ -223,8 +228,7 @@ func runDumpMode(cfg dumpConfig) error {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			snap := poll.Once(ctx, pollParams)
-			if err := capture.DumpOnce(f, w, snap); err != nil {
+			if err := capture.DumpOnce(f, dw.w, poll.Once(ctx, pollParams)); err != nil {
 				return err
 			}
 		}
