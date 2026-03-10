@@ -38,13 +38,13 @@ match.file_patterns = ["**/tui/keyhandlers.go", "**/tui/views.go"]
 set.ignored = true
 
 [[triage]]
-match.rules = ["qlty:file-complexity"]
-match.file_patterns = ["**/cilium/conntrack.go"]
+match.rules = ["qlty:return-statements"]
+match.file_patterns = ["**/cilium/json.go"]
 set.ignored = true
 
 [[triage]]
-match.rules = ["qlty:return-statements"]
-match.file_patterns = ["**/cilium/json.go"]
+match.rules = ["qlty:file-complexity"]
+match.file_patterns = ["**/cilium/filter.go"]
 set.ignored = true
 
 [[triage]]
