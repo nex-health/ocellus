@@ -65,6 +65,21 @@ func (f Filter) matchPort(port int) bool {
 	return port >= lo && port <= hi
 }
 
+// dedupPeer returns a dedup key for the peer, or "" if already seen.
+func dedupPeer(peer *Peer, ff filterFlags, seen map[string]bool) string {
+	if peer == nil {
+		return ""
+	}
+	dedupKey := peer.Src
+	if ff.dirIn && ff.dirOut {
+		dedupKey = peer.Direction + ":" + peer.Src
+	}
+	if seen[dedupKey] {
+		return ""
+	}
+	return dedupKey
+}
+
 // matchState returns true if the given closing status passes the state filter.
 func (ff filterFlags) matchState(isClosing bool) bool {
 	if ff.stateAll {

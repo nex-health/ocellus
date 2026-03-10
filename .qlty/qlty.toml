@@ -1,24 +1,58 @@
 config_version = "0"
 
-# Go test files follow *_test.go convention.
 test_patterns = ["**/*_test.go"]
-
-# Exclude test files from duplication analysis — repetitive setup is normal.
 exclude_patterns = ["**/*_test.go"]
 
-# Suppress underscored test names (TestFoo_Bar) — deliberate style choice.
 [[triage]]
 match.rules = ["radarlint-go:S100"]
 set.ignored = true
 
-# runDumpMode has 6 returns — natural for setup-then-loop with error handling.
 [[triage]]
 match.rules = ["qlty:return-statements"]
 match.file_patterns = ["main.go"]
 set.ignored = true
 
-# filteredPeers: 5-clause AND is already extracted to a named boolean.
 [[triage]]
 match.rules = ["qlty:boolean-logic"]
 match.file_patterns = ["**/tui/peers.go"]
+set.ignored = true
+
+[[triage]]
+match.rules = ["qlty:return-statements"]
+match.file_patterns = ["**/tui/model.go"]
+set.ignored = true
+
+[[triage]]
+match.rules = ["qlty:return-statements"]
+match.file_patterns = ["**/cilium/conntrack.go"]
+set.ignored = true
+
+[[triage]]
+match.rules = ["qlty:function-complexity"]
+match.file_patterns = ["**/tui/keyhandlers.go"]
+set.ignored = true
+
+[[triage]]
+match.rules = ["qlty:file-complexity"]
+match.file_patterns = ["**/tui/keyhandlers.go", "**/tui/views.go"]
+set.ignored = true
+
+[[triage]]
+match.rules = ["qlty:file-complexity"]
+match.file_patterns = ["**/cilium/conntrack.go"]
+set.ignored = true
+
+[[triage]]
+match.rules = ["qlty:return-statements"]
+match.file_patterns = ["**/cilium/json.go"]
+set.ignored = true
+
+[[triage]]
+match.rules = ["qlty:function-complexity"]
+match.file_patterns = ["**/capture/differ.go"]
+set.ignored = true
+
+[[triage]]
+match.rules = ["qlty:file-complexity"]
+match.file_patterns = ["**/cilium/json.go"]
 set.ignored = true

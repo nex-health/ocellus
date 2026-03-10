@@ -7,6 +7,55 @@ import (
 	"github.com/nex-health/ocellus/internal/cilium"
 )
 
+// diffPodPeers computes peer-level events (added, removed, traffic spike) for a single pod.
+func diffPodPeers(events []Event, curr Snapshot, prev *Snapshot, podName string) []Event {
+	currSet := makePeerSet(curr.Pods[podName])
+	prevSet := makePeerSet(prev.Pods[podName])
+
+	for src, peer := range currSet {
+		if _, ok := prevSet[src]; !ok {
+			p := peer
+			events = append(events, Event{
+				Timestamp: curr.Timestamp,
+				Kind:      EventPeerAdded,
+				Pod:       podName,
+				Peer:      &p,
+			})
+		}
+	}
+
+	for src, peer := range prevSet {
+		if _, ok := currSet[src]; !ok {
+			p := peer
+			events = append(events, Event{
+				Timestamp: curr.Timestamp,
+				Kind:      EventPeerRemoved,
+				Pod:       podName,
+				Peer:      &p,
+			})
+		}
+	}
+
+	for src, currPeer := range currSet {
+		if prevPeer, ok := prevSet[src]; ok {
+			if prevPeer.Bytes > 0 && currPeer.Bytes > prevPeer.Bytes*2 {
+				p := currPeer
+				events = append(events, Event{
+					Timestamp: curr.Timestamp,
+					Kind:      EventTrafficSpike,
+					Pod:       podName,
+					Peer:      &p,
+					Message: fmt.Sprintf("bytes %d -> %d (%.1fx)",
+						prevPeer.Bytes, currPeer.Bytes,
+						float64(currPeer.Bytes)/float64(prevPeer.Bytes)),
+				})
+			}
+		}
+	}
+
+	return events
+}
+
 // Diff compares two snapshots and returns events describing changes.
 // If prev is nil, this is treated as the first snapshot.
 func Diff(prev *Snapshot, curr Snapshot) []Event {
@@ -60,55 +109,7 @@ func Diff(prev *Snapshot, curr Snapshot) []Event {
 	// Peer-level events (only if we have a previous snapshot).
 	if prev != nil {
 		for _, podName := range podNames {
-			currPeers := curr.Pods[podName]
-			prevPeers := prev.Pods[podName]
-
-			currSet := makePeerSet(currPeers)
-			prevSet := makePeerSet(prevPeers)
-
-			// Added peers.
-			for src, peer := range currSet {
-				if _, ok := prevSet[src]; !ok {
-					p := peer
-					events = append(events, Event{
-						Timestamp: curr.Timestamp,
-						Kind:      EventPeerAdded,
-						Pod:       podName,
-						Peer:      &p,
-					})
-				}
-			}
-
-			// Removed peers.
-			for src, peer := range prevSet {
-				if _, ok := currSet[src]; !ok {
-					p := peer
-					events = append(events, Event{
-						Timestamp: curr.Timestamp,
-						Kind:      EventPeerRemoved,
-						Pod:       podName,
-						Peer:      &p,
-					})
-				}
-			}
-
-			// Traffic spikes (2x threshold).
-			for src, currPeer := range currSet {
-				if prevPeer, ok := prevSet[src]; ok {
-					if prevPeer.Bytes > 0 && currPeer.Bytes > prevPeer.Bytes*2 {
-						p := currPeer
-						events = append(events, Event{
-							Timestamp: curr.Timestamp,
-							Kind:      EventTrafficSpike,
-							Pod:       podName,
-							Peer:      &p,
-							Message: fmt.Sprintf("bytes %d -> %d (%.1fx)",
-								prevPeer.Bytes, currPeer.Bytes,
-								float64(currPeer.Bytes)/float64(prevPeer.Bytes)),
-						})
-					}
-				}
-			}
+			events = diffPodPeers(events, curr, prev, podName)
 		}
 	}
 

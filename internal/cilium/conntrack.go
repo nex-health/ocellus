@@ -56,40 +56,71 @@ type FilterOpts struct {
 func NewFilter(opts FilterOpts) (Filter, error) {
 	var f Filter
 
-	// Parse port.
-	if opts.Port != "" {
-		if idx := strings.Index(opts.Port, "-"); idx >= 0 {
-			lo, err := strconv.Atoi(opts.Port[:idx])
-			if err != nil {
-				return f, fmt.Errorf("invalid port range: %s", opts.Port)
-			}
-			hi, err := strconv.Atoi(opts.Port[idx+1:])
-			if err != nil {
-				return f, fmt.Errorf("invalid port range: %s", opts.Port)
-			}
-			if lo < 1 || lo > 65535 || hi < 1 || hi > 65535 {
-				return f, fmt.Errorf("invalid port range %s: ports must be 1-65535", opts.Port)
-			}
-			if lo > hi {
-				return f, fmt.Errorf("invalid port range %d-%d: min must be <= max", lo, hi)
-			}
-			f.PortMin = lo
-			f.PortMax = hi
-		} else {
-			p, err := strconv.Atoi(opts.Port)
-			if err != nil {
-				return f, fmt.Errorf("invalid port: %s", opts.Port)
-			}
-			if p < 1 || p > 65535 {
-				return f, fmt.Errorf("invalid port %d: must be 1-65535", p)
-			}
-			f.PortMin = p
-			f.PortMax = p
-		}
+	if err := f.parsePort(opts.Port); err != nil {
+		return f, err
+	}
+	if err := f.parseProtos(opts.Proto); err != nil {
+		return f, err
+	}
+	if err := f.parseSrcCIDR(opts.Src); err != nil {
+		return f, err
+	}
+	f.parseStates(opts.State)
+	if err := f.parseDirection(opts.Direction); err != nil {
+		return f, err
+	}
+	if err := f.parseIPVersion(opts.IPVersion); err != nil {
+		return f, err
 	}
 
-	// Parse protocol.
-	proto := opts.Proto
+	return f, nil
+}
+
+func (f *Filter) parsePort(port string) error {
+	if port == "" {
+		return nil
+	}
+	before, after, hasRange := strings.Cut(port, "-")
+	if !hasRange {
+		return f.parseSinglePort(port)
+	}
+	return f.parsePortRange(before, after, port)
+}
+
+func (f *Filter) parseSinglePort(port string) error {
+	p, err := strconv.Atoi(port)
+	if err != nil {
+		return fmt.Errorf("invalid port: %s", port)
+	}
+	if p < 1 || p > 65535 {
+		return fmt.Errorf("invalid port %d: must be 1-65535", p)
+	}
+	f.PortMin = p
+	f.PortMax = p
+	return nil
+}
+
+func (f *Filter) parsePortRange(loStr, hiStr, raw string) error {
+	lo, err := strconv.Atoi(loStr)
+	if err != nil {
+		return fmt.Errorf("invalid port range: %s", raw)
+	}
+	hi, err := strconv.Atoi(hiStr)
+	if err != nil {
+		return fmt.Errorf("invalid port range: %s", raw)
+	}
+	if lo < 1 || lo > 65535 || hi < 1 || hi > 65535 {
+		return fmt.Errorf("invalid port range %s: ports must be 1-65535", raw)
+	}
+	if lo > hi {
+		return fmt.Errorf("invalid port range %d-%d: min must be <= max", lo, hi)
+	}
+	f.PortMin = lo
+	f.PortMax = hi
+	return nil
+}
+
+func (f *Filter) parseProtos(proto string) error {
 	if proto == "" {
 		proto = "tcp,udp"
 	}
@@ -99,29 +130,31 @@ func NewFilter(opts FilterOpts) (Filter, error) {
 			f.Protos = append(f.Protos, p)
 		}
 	}
-
-	// Validate protocols.
 	for _, p := range f.Protos {
 		if p != "TCP" && p != "UDP" {
-			return f, fmt.Errorf("unsupported protocol %q (valid: tcp, udp)", strings.ToLower(p))
+			return fmt.Errorf("unsupported protocol %q (valid: tcp, udp)", strings.ToLower(p))
 		}
 	}
+	return nil
+}
 
-	// Parse source CIDR.
-	if opts.Src != "" {
-		cidrStr := opts.Src
-		if !strings.Contains(cidrStr, "/") {
-			cidrStr += "/32"
-		}
-		_, cidr, err := net.ParseCIDR(cidrStr)
-		if err != nil {
-			return f, fmt.Errorf("invalid source CIDR: %s", opts.Src)
-		}
-		f.SrcCIDR = cidr
+func (f *Filter) parseSrcCIDR(src string) error {
+	if src == "" {
+		return nil
 	}
+	cidrStr := src
+	if !strings.Contains(cidrStr, "/") {
+		cidrStr += "/32"
+	}
+	_, cidr, err := net.ParseCIDR(cidrStr)
+	if err != nil {
+		return fmt.Errorf("invalid source CIDR: %s", src)
+	}
+	f.SrcCIDR = cidr
+	return nil
+}
 
-	// Parse state.
-	state := opts.State
+func (f *Filter) parseStates(state string) {
 	if state == "" {
 		state = "established"
 	}
@@ -131,9 +164,10 @@ func NewFilter(opts FilterOpts) (Filter, error) {
 			f.States = append(f.States, s)
 		}
 	}
+}
 
-	// Parse direction.
-	dir := strings.ToLower(strings.TrimSpace(opts.Direction))
+func (f *Filter) parseDirection(dir string) error {
+	dir = strings.ToLower(strings.TrimSpace(dir))
 	if dir == "" {
 		dir = "all"
 	}
@@ -145,11 +179,13 @@ func NewFilter(opts FilterOpts) (Filter, error) {
 	case "all":
 		f.Directions = []string{"in", "out"}
 	default:
-		return f, fmt.Errorf("invalid direction %q (valid: in, out, all)", dir)
+		return fmt.Errorf("invalid direction %q (valid: in, out, all)", dir)
 	}
+	return nil
+}
 
-	// Parse IP version.
-	ipv := strings.TrimSpace(opts.IPVersion)
+func (f *Filter) parseIPVersion(ipv string) error {
+	ipv = strings.TrimSpace(ipv)
 	if ipv == "" {
 		ipv = "all"
 	}
@@ -161,10 +197,9 @@ func NewFilter(opts FilterOpts) (Filter, error) {
 	case "all":
 		f.IPVersions = []string{"4", "6"}
 	default:
-		return f, fmt.Errorf("invalid IP version %q (valid: 4, 6, all)", ipv)
+		return fmt.Errorf("invalid IP version %q (valid: 4, 6, all)", ipv)
 	}
-
-	return f, nil
+	return nil
 }
 
 // FilterSummary returns a human-readable summary of the filter for display.
@@ -476,19 +511,10 @@ func ParseCTOutput(output string, podIP string, filter Filter) []Peer {
 
 	for line := range strings.SplitSeq(output, "\n") {
 		peer := parseCTLine(line, podIP, filter, ff, prefixes)
-		if peer == nil {
-			continue
+		if key := dedupPeer(peer, ff, seen); key != "" {
+			seen[key] = true
+			peers = append(peers, *peer)
 		}
-
-		dedupKey := peer.Src
-		if ff.dirIn && ff.dirOut {
-			dedupKey = peer.Direction + ":" + peer.Src
-		}
-		if seen[dedupKey] {
-			continue
-		}
-		seen[dedupKey] = true
-		peers = append(peers, *peer)
 	}
 
 	sort.Slice(peers, func(i, j int) bool {
@@ -533,24 +559,7 @@ func compareIP(a, b string) int {
 	aIP := net.ParseIP(a)
 	bIP := net.ParseIP(b)
 	if aIP == nil || bIP == nil {
-		// Fall back to string comparison for unparseable IPs.
-		if a < b {
-			return -1
-		}
-		if a > b {
-			return 1
-		}
-		return 0
+		return strings.Compare(a, b)
 	}
-	aBytes := aIP.To16()
-	bBytes := bIP.To16()
-	for i := range aBytes {
-		if aBytes[i] < bBytes[i] {
-			return -1
-		}
-		if aBytes[i] > bBytes[i] {
-			return 1
-		}
-	}
-	return 0
+	return strings.Compare(string(aIP.To16()), string(bIP.To16()))
 }

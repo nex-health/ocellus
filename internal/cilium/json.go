@@ -167,6 +167,86 @@ func parseKey6(k *tupleKey6) (*parsedKey, error) {
 	}, decodeIPv6, "6")
 }
 
+// convertJSONRecord converts a single JSON conntrack record to a Peer, or nil if filtered out.
+func convertJSONRecord(rec ctMapRecord, podIP string, filter Filter, ff filterFlags, protos []string) *Peer {
+	var pk *parsedKey
+	var err error
+	switch {
+	case rec.Key.TupleKey4 != nil:
+		if !ff.wantV4 {
+			return nil
+		}
+		pk, err = parseKey4(rec.Key.TupleKey4)
+	case rec.Key.TupleKey6 != nil:
+		if !ff.wantV6 {
+			return nil
+		}
+		pk, err = parseKey6(rec.Key.TupleKey6)
+	default:
+		return nil
+	}
+	if err != nil {
+		return nil
+	}
+
+	if pk.isIn && !ff.dirIn {
+		return nil
+	}
+	if !pk.isIn && !ff.dirOut {
+		return nil
+	}
+	if !slices.Contains(protos, pk.proto) {
+		return nil
+	}
+	if pk.podIP.String() != podIP {
+		return nil
+	}
+	if !filter.matchPort(pk.dstPort) {
+		return nil
+	}
+	if filter.SrcCIDR != nil && !filter.SrcCIDR.Contains(pk.peerIP) {
+		return nil
+	}
+
+	ctFlags := rec.Value.Flags
+	isClosing := ctFlags&0x0001 != 0 || ctFlags&0x0002 != 0
+	if !ff.matchState(isClosing) {
+		return nil
+	}
+
+	state := StateEstablished
+	if isClosing {
+		state = StateClosing
+	}
+	direction := DirIn
+	if !pk.isIn {
+		direction = DirOut
+	}
+
+	rxPackets := rec.Value.Union0[0]
+	rxBytes := rec.Value.Union0[1]
+
+	return &Peer{
+		Src:          formatAddrPort(pk.peerIP.String(), pk.peerPort),
+		DstPort:      pk.dstPort,
+		Proto:        pk.proto,
+		State:        state,
+		Direction:    direction,
+		IPVersion:    pk.ipVersion,
+		RxBytes:      rxBytes,
+		TxBytes:      rec.Value.Bytes,
+		RxPackets:    rxPackets,
+		TxPackets:    rec.Value.Packets,
+		Bytes:        rxBytes + rec.Value.Bytes,
+		Packets:      rxPackets + rec.Value.Packets,
+		Expires:      rec.Value.Lifetime,
+		LastRxReport: rec.Value.LastRxReport,
+		LastTxReport: rec.Value.LastTxReport,
+		RxFlagsSeen:  rec.Value.RxFlagsSeen,
+		TxFlagsSeen:  rec.Value.TxFlagsSeen,
+	}
+}
+
 // ParseJSONCTOutput parses the JSON output of "cilium bpf ct list global -o json"
 // and returns unique peers matching the filter for the given podIP.
 func ParseJSONCTOutput(data string, podIP string, filter Filter) ([]Peer, error) {
@@ -182,104 +262,11 @@ func ParseJSONCTOutput(data string, podIP string, filter Filter) ([]Peer, error)
 	var peers []Peer
 
 	for _, rec := range records {
-		var pk *parsedKey
-		var err error
-		switch {
-		case rec.Key.TupleKey4 != nil:
-			if !ff.wantV4 {
-				continue
-			}
-			pk, err = parseKey4(rec.Key.TupleKey4)
-		case rec.Key.TupleKey6 != nil:
-			if !ff.wantV6 {
-				continue
-			}
-			pk, err = parseKey6(rec.Key.TupleKey6)
-		default:
-			continue
+		peer := convertJSONRecord(rec, podIP, filter, ff, protos)
+		if key := dedupPeer(peer, ff, seen); key != "" {
+			seen[key] = true
+			peers = append(peers, *peer)
 		}
-		if err != nil {
-			continue
-		}
-
-		// Direction filter.
-		if pk.isIn && !ff.dirIn {
-			continue
-		}
-		if !pk.isIn && !ff.dirOut {
-			continue
-		}
-
-		if !slices.Contains(protos, pk.proto) {
-			continue
-		}
-
-		if pk.podIP.String() != podIP {
-			continue
-		}
-
-		if !filter.matchPort(pk.dstPort) {
-			continue
-		}
-
-		if filter.SrcCIDR != nil && !filter.SrcCIDR.Contains(pk.peerIP) {
-			continue
-		}
-
-		// State detection from Flags field bits.
-		// Bit 0 = RxClosing, Bit 1 = TxClosing.
-		ctFlags := rec.Value.Flags
-		isClosing := ctFlags&0x0001 != 0 || ctFlags&0x0002 != 0
-
-		if !ff.matchState(isClosing) {
-			continue
-		}
-
-		peerAddr := formatAddrPort(pk.peerIP.String(), pk.peerPort)
-
-		direction := DirIn
-		if !pk.isIn {
-			direction = DirOut
-		}
-
-		// Dedup key includes direction when showing both.
-		dedupKey := peerAddr
-		if ff.dirIn && ff.dirOut {
-			dedupKey = direction + ":" + peerAddr
-		}
-		if seen[dedupKey] {
-			continue
-		}
-		seen[dedupKey] = true
-
-		state := StateEstablished
-		if isClosing {
-			state = StateClosing
-		}
-
-		// RxPackets/RxBytes stored in Union0 for non-NAT entries.
-		rxPackets := rec.Value.Union0[0]
-		rxBytes := rec.Value.Union0[1]
-
-		peers = append(peers, Peer{
-			Src:          peerAddr,
-			DstPort:      pk.dstPort,
-			Proto:        pk.proto,
-			State:        state,
-			Direction:    direction,
-			IPVersion:    pk.ipVersion,
-			RxBytes:      rxBytes,
-			TxBytes:      rec.Value.Bytes,
-			RxPackets:    rxPackets,
-			TxPackets:    rec.Value.Packets,
-			Bytes:        rxBytes + rec.Value.Bytes,
-			Packets:      rxPackets + rec.Value.Packets,
-			Expires:      rec.Value.Lifetime,
-			LastRxReport: rec.Value.LastRxReport,
-			LastTxReport: rec.Value.LastTxReport,
-			RxFlagsSeen:  rec.Value.RxFlagsSeen,
-			TxFlagsSeen:  rec.Value.TxFlagsSeen,
-		})
 	}
 
 	sort.Slice(peers, func(i, j int) bool {

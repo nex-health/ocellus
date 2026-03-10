@@ -21,6 +21,17 @@ type Params struct {
 	Timeout time.Duration   // per-node timeout; 0 = no timeout
 }
 
+// groupPodsByNode groups active (non-exited) pods by their node name.
+func groupPodsByNode(pods []k8s.PodInfo, exited map[string]bool) map[string][]k8s.PodInfo {
+	groups := make(map[string][]k8s.PodInfo)
+	for _, pod := range pods {
+		if !exited[pod.Name] {
+			groups[pod.Node] = append(groups[pod.Node], pod)
+		}
+	}
+	return groups
+}
+
 // Once polls all nodes for conntrack data and returns a snapshot.
 // It groups pods by node, fans out one goroutine per node, finds the
 // Cilium agent, queries conntrack peers, and maps results back to pod names.
@@ -29,13 +40,7 @@ func Once(ctx context.Context, p Params) capture.Snapshot {
 		p.Source = &cilium.TextSource{}
 	}
 
-	// Group active pods by node.
-	nodeGroups := make(map[string][]k8s.PodInfo)
-	for _, pod := range p.Pods {
-		if !p.Exited[pod.Name] {
-			nodeGroups[pod.Node] = append(nodeGroups[pod.Node], pod)
-		}
-	}
+	nodeGroups := groupPodsByNode(p.Pods, p.Exited)
 
 	var mu sync.Mutex
 	peerResults := make(map[string][]cilium.Peer)
