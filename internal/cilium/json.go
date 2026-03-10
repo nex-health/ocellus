@@ -237,9 +237,9 @@ func ParseJSONCTOutput(data string, podIP string, filter Filter) ([]Peer, error)
 
 		peerAddr := formatAddrPort(pk.peerIP.String(), pk.peerPort)
 
-		direction := "in"
+		direction := DirIn
 		if !pk.isIn {
-			direction = "out"
+			direction = DirOut
 		}
 
 		// Dedup key includes direction when showing both.
@@ -252,9 +252,9 @@ func ParseJSONCTOutput(data string, podIP string, filter Filter) ([]Peer, error)
 		}
 		seen[dedupKey] = true
 
-		state := "established"
+		state := StateEstablished
 		if isClosing {
-			state = "closing"
+			state = StateClosing
 		}
 
 		// RxPackets/RxBytes stored in Union0 for non-NAT entries.

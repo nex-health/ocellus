@@ -10,6 +10,11 @@ import (
 	"github.com/nex-health/ocellus/internal/cilium"
 )
 
+const (
+	errFormatSnapshot = "FormatSnapshot error: %v"
+	errFormatEvent    = "FormatEvent error: %v"
+)
+
 func testSnapshot() Snapshot {
 	return Snapshot{
 		Timestamp: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC),
@@ -35,7 +40,7 @@ func TestJSONLFormatterSnapshot(t *testing.T) {
 	f := &JSONLFormatter{}
 	data, err := f.FormatSnapshot(testSnapshot())
 	if err != nil {
-		t.Fatalf("FormatSnapshot error: %v", err)
+		t.Fatalf(errFormatSnapshot, err)
 	}
 	s := string(data)
 	if !strings.HasSuffix(s, "\n") {
@@ -57,7 +62,7 @@ func TestJSONLFormatterEvent(t *testing.T) {
 	f := &JSONLFormatter{}
 	data, err := f.FormatEvent(testEvent())
 	if err != nil {
-		t.Fatalf("FormatEvent error: %v", err)
+		t.Fatalf(errFormatEvent, err)
 	}
 	s := string(data)
 	if !strings.HasSuffix(s, "\n") {
@@ -76,7 +81,7 @@ func TestJSONFormatterSnapshot(t *testing.T) {
 	f := &JSONFormatter{}
 	data, err := f.FormatSnapshot(testSnapshot())
 	if err != nil {
-		t.Fatalf("FormatSnapshot error: %v", err)
+		t.Fatalf(errFormatSnapshot, err)
 	}
 	s := string(data)
 	if !strings.Contains(s, "\n  ") {
@@ -95,7 +100,7 @@ func TestJSONFormatterEvent(t *testing.T) {
 	f := &JSONFormatter{}
 	data, err := f.FormatEvent(testEvent())
 	if err != nil {
-		t.Fatalf("FormatEvent error: %v", err)
+		t.Fatalf(errFormatEvent, err)
 	}
 	var parsed map[string]any
 	if err := json.Unmarshal(data, &parsed); err != nil {
@@ -107,7 +112,7 @@ func TestCSVFormatterSnapshot(t *testing.T) {
 	f := NewCSVFormatter()
 	data, err := f.FormatSnapshot(testSnapshot())
 	if err != nil {
-		t.Fatalf("FormatSnapshot error: %v", err)
+		t.Fatalf(errFormatSnapshot, err)
 	}
 	s := string(data)
 	lines := strings.Split(strings.TrimSpace(s), "\n")
@@ -133,7 +138,7 @@ func TestCSVFormatterEvent(t *testing.T) {
 	f := NewCSVFormatter()
 	data, err := f.FormatEvent(testEvent())
 	if err != nil {
-		t.Fatalf("FormatEvent error: %v", err)
+		t.Fatalf(errFormatEvent, err)
 	}
 	s := string(data)
 	lines := strings.Split(strings.TrimSpace(s), "\n")
@@ -150,7 +155,7 @@ func TestCSVFormatterOmitsHeaderAfterFirst(t *testing.T) {
 	_, _ = f.FormatSnapshot(testSnapshot())
 	data, err := f.FormatSnapshot(testSnapshot())
 	if err != nil {
-		t.Fatalf("FormatSnapshot error: %v", err)
+		t.Fatalf(errFormatSnapshot, err)
 	}
 	s := string(data)
 	if strings.Contains(s, "timestamp,") {
@@ -162,7 +167,7 @@ func TestTextFormatterSnapshot(t *testing.T) {
 	f := &TextFormatter{}
 	data, err := f.FormatSnapshot(testSnapshot())
 	if err != nil {
-		t.Fatalf("FormatSnapshot error: %v", err)
+		t.Fatalf(errFormatSnapshot, err)
 	}
 	s := string(data)
 	if !strings.Contains(s, "2026-01-01T12:00:00Z") {
@@ -180,7 +185,7 @@ func TestTextFormatterEvent(t *testing.T) {
 	f := &TextFormatter{}
 	data, err := f.FormatEvent(testEvent())
 	if err != nil {
-		t.Fatalf("FormatEvent error: %v", err)
+		t.Fatalf(errFormatEvent, err)
 	}
 	s := string(data)
 	if !strings.Contains(s, "peer_added") {
@@ -254,7 +259,7 @@ func TestCSVSnapshotContainsDirection(t *testing.T) {
 	f := NewCSVFormatter()
 	data, err := f.FormatSnapshot(testSnapshot())
 	if err != nil {
-		t.Fatalf("FormatSnapshot error: %v", err)
+		t.Fatalf(errFormatSnapshot, err)
 	}
 	s := string(data)
 	lines := strings.Split(strings.TrimSpace(s), "\n")
@@ -270,7 +275,7 @@ func TestTextFormatterSnapshotContainsDirection(t *testing.T) {
 	f := &TextFormatter{}
 	data, err := f.FormatSnapshot(testSnapshot())
 	if err != nil {
-		t.Fatalf("FormatSnapshot error: %v", err)
+		t.Fatalf(errFormatSnapshot, err)
 	}
 	s := string(data)
 	if !strings.Contains(s, " in ") {

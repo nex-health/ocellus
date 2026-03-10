@@ -9,6 +9,8 @@ import (
 	"testing"
 )
 
+const errUnexpected = "unexpected error: %v"
+
 func encodeIPv4(a, b, c, d byte) string {
 	return base64.StdEncoding.EncodeToString([]byte{a, b, c, d})
 }
@@ -48,7 +50,7 @@ func TestParseJSONCTOutput(t *testing.T) {
 
 	peers, err := ParseJSONCTOutput(string(data), "10.4.34.6", Filter{PortMin: 4143, PortMax: 4143})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(errUnexpected, err)
 	}
 	if len(peers) != 1 {
 		t.Fatalf("expected 1 peer, got %d", len(peers))
@@ -87,7 +89,7 @@ func TestParseJSONCTOutput_FiltersOUT(t *testing.T) {
 
 	peers, err := ParseJSONCTOutput(string(data), "10.4.34.6", Filter{PortMin: 4143, PortMax: 4143})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(errUnexpected, err)
 	}
 	if len(peers) != 0 {
 		t.Fatalf("expected 0 peers (OUT should be filtered), got %d", len(peers))
@@ -116,7 +118,7 @@ func TestParseJSONCTOutput_DirectionOut(t *testing.T) {
 	// Explicit IN filter should exclude this.
 	peers, err := ParseJSONCTOutput(string(data), "10.4.34.6", Filter{Directions: []string{"in"}})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(errUnexpected, err)
 	}
 	if len(peers) != 0 {
 		t.Fatalf("IN filter should exclude OUT entries, got %d", len(peers))
@@ -127,7 +129,7 @@ func TestParseJSONCTOutput_DirectionOut(t *testing.T) {
 		Directions: []string{"out"},
 	})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(errUnexpected, err)
 	}
 	if len(peers) != 1 {
 		t.Fatalf("expected 1 OUT peer, got %d", len(peers))
@@ -180,7 +182,7 @@ func TestParseJSONCTOutput_DirectionAll(t *testing.T) {
 		Directions: []string{"in", "out"},
 	})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(errUnexpected, err)
 	}
 	if len(peers) != 2 {
 		t.Fatalf("expected 2 peers (IN + OUT), got %d", len(peers))
@@ -220,7 +222,7 @@ func TestParseJSONCTOutput_DirectionField(t *testing.T) {
 
 	peers, err := ParseJSONCTOutput(string(data), "10.4.34.6", Filter{PortMin: 4143, PortMax: 4143})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(errUnexpected, err)
 	}
 	if len(peers) != 1 {
 		t.Fatalf("expected 1 peer, got %d", len(peers))
@@ -260,7 +262,7 @@ func TestParseJSONCTOutput_UDP(t *testing.T) {
 		Protos: []string{"UDP"},
 	})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(errUnexpected, err)
 	}
 	if len(peers) != 1 {
 		t.Fatalf("expected 1 UDP peer, got %d", len(peers))
@@ -295,7 +297,7 @@ func TestParseJSONCTOutput_ServiceFlag(t *testing.T) {
 		Protos: []string{"UDP"},
 	})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(errUnexpected, err)
 	}
 	if len(peers) != 1 {
 		t.Fatalf("expected 1 peer with service flag, got %d", len(peers))
@@ -329,7 +331,7 @@ func TestParseJSONCTOutput_StateClosing(t *testing.T) {
 	// Default filter (established only) should exclude closing.
 	peers, err := ParseJSONCTOutput(string(data), "10.4.34.6", Filter{PortMin: 4143, PortMax: 4143})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(errUnexpected, err)
 	}
 	if len(peers) != 0 {
 		t.Fatalf("expected 0 peers (closing excluded by default), got %d", len(peers))
@@ -341,7 +343,7 @@ func TestParseJSONCTOutput_StateClosing(t *testing.T) {
 		States: []string{"closing"},
 	})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(errUnexpected, err)
 	}
 	if len(peers) != 1 {
 		t.Fatalf("expected 1 closing peer, got %d", len(peers))
@@ -394,7 +396,7 @@ func TestParseJSONCTOutput_SrcCIDRFilter(t *testing.T) {
 		SrcCIDR: cidr,
 	})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(errUnexpected, err)
 	}
 	if len(peers) != 1 {
 		t.Fatalf("expected 1 peer from CIDR, got %d", len(peers))
@@ -415,7 +417,7 @@ func TestParseJSONCTOutput_NilTupleKey4(t *testing.T) {
 
 	peers, err := ParseJSONCTOutput(string(data), "10.1.0.1", Filter{})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(errUnexpected, err)
 	}
 	if len(peers) != 0 {
 		t.Fatalf("expected 0 peers for nil key entries, got %d", len(peers))
@@ -453,7 +455,7 @@ func TestParseJSONCTOutput_PortRangeFilter(t *testing.T) {
 
 	peers, err := ParseJSONCTOutput(string(data), "10.1.0.1", Filter{PortMin: 5432, PortMax: 5440})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(errUnexpected, err)
 	}
 	if len(peers) != 2 {
 		t.Fatalf("expected 2 peers in port range, got %d", len(peers))
@@ -501,7 +503,7 @@ func TestJSONSourceQueryPeers(t *testing.T) {
 	src := &JSONSource{}
 	results, err := src.QueryPeers(context.Background(), client, "cilium-abc", []string{"10.4.34.6"}, Filter{PortMin: 4143, PortMax: 4143})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(errUnexpected, err)
 	}
 	peers := results["10.4.34.6"]
 	if len(peers) != 1 {
@@ -581,7 +583,7 @@ func TestParseJSONCTOutput_IPv6(t *testing.T) {
 
 	peers, err := ParseJSONCTOutput(string(data), "f00d::a0f:0:0:4264", Filter{PortMin: 80, PortMax: 80})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(errUnexpected, err)
 	}
 	if len(peers) != 1 {
 		t.Fatalf("expected 1 peer, got %d", len(peers))
@@ -684,7 +686,7 @@ func TestParseJSONCTOutput_IPv4HasIPVersion(t *testing.T) {
 
 	peers, err := ParseJSONCTOutput(string(data), "10.4.34.6", Filter{PortMin: 4143, PortMax: 4143})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(errUnexpected, err)
 	}
 	if len(peers) != 1 {
 		t.Fatalf("expected 1 peer, got %d", len(peers))

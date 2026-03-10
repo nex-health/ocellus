@@ -441,13 +441,13 @@ func parseCTLine(line, podIP string, filter Filter, ff filterFlags, prefixes []d
 	}
 
 	// Build peer.
-	state := "established"
+	state := StateEstablished
 	if isClosing {
-		state = "closing"
+		state = StateClosing
 	}
-	direction := "in"
+	direction := DirIn
 	if isOutDir {
-		direction = "out"
+		direction = DirOut
 	}
 	ipVersion := "4"
 	if isV6 {
