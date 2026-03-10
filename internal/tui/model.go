@@ -357,4 +357,3 @@ func (m Model) View() string {
 		return m.viewPodList(w)
 	}
 }
-
