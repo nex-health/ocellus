@@ -25,7 +25,6 @@ checksum:
 
 changelog:
   sort: asc
-  use: github
   abbrev: -1
   groups:
     - title: Features
