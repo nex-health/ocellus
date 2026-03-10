@@ -243,14 +243,9 @@ func (m Model) viewPodList(w int) string {
 			if m.exited[p.Name] {
 				icon = exitedIcon.String()
 			}
-			var countStr string
-			switch {
-			case m.timestamp.IsZero():
-				countStr = peerCountStyle.Render(countText)
-			case peerCount > 0:
+			countStr := peerCountStyle.Render(countText)
+			if peerCount > 0 && !m.timestamp.IsZero() {
 				countStr = peerCountActiveStyle.Render(countText)
-			default:
-				countStr = peerCountStyle.Render(countText)
 			}
 			line := fmt.Sprintf("  %s %-*s  %s", icon, maxNameW, name, countStr)
 			b.WriteString(rowStyle.Width(w).Render(line))
