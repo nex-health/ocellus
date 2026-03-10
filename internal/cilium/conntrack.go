@@ -332,46 +332,33 @@ func buildDirPrefixes(protos []string, ff filterFlags) []dirPrefix {
 	return prefixes
 }
 
-// parseSplitOrCombinedBytes extracts rx/tx byte counts, falling back to
-// combined Bytes field for older Cilium versions.
-func parseSplitOrCombinedBytes(line string) (rx, tx uint64) {
-	rx = parseKVUint(line, "RxBytes")
+// parseSplitOrCombined extracts rx/tx counter values, falling back to a
+// combined field for older Cilium versions.
+func parseSplitOrCombined(line, rxKey, rxKeyLower, txKey, txKeyLower, totalKey, totalKeyLower string) (rx, tx uint64) {
+	rx = parseKVUint(line, rxKey)
 	if rx == 0 {
-		rx = parseKVUint(line, "rx_bytes")
+		rx = parseKVUint(line, rxKeyLower)
 	}
-	tx = parseKVUint(line, "TxBytes")
+	tx = parseKVUint(line, txKey)
 	if tx == 0 {
-		tx = parseKVUint(line, "tx_bytes")
+		tx = parseKVUint(line, txKeyLower)
 	}
 	if rx == 0 && tx == 0 {
-		total := parseKVUint(line, "Bytes")
+		total := parseKVUint(line, totalKey)
 		if total == 0 {
-			total = parseKVUint(line, "bytes")
+			total = parseKVUint(line, totalKeyLower)
 		}
 		rx = total
 	}
 	return rx, tx
 }
 
-// parseSplitOrCombinedPackets extracts rx/tx packet counts, falling back to
-// combined Packets field for older Cilium versions.
+func parseSplitOrCombinedBytes(line string) (rx, tx uint64) {
+	return parseSplitOrCombined(line, "RxBytes", "rx_bytes", "TxBytes", "tx_bytes", "Bytes", "bytes")
+}
+
 func parseSplitOrCombinedPackets(line string) (rx, tx uint64) {
-	rx = parseKVUint(line, "RxPackets")
-	if rx == 0 {
-		rx = parseKVUint(line, "rx_packets")
-	}
-	tx = parseKVUint(line, "TxPackets")
-	if tx == 0 {
-		tx = parseKVUint(line, "tx_packets")
-	}
-	if rx == 0 && tx == 0 {
-		total := parseKVUint(line, "Packets")
-		if total == 0 {
-			total = parseKVUint(line, "packets")
-		}
-		rx = total
-	}
-	return rx, tx
+	return parseSplitOrCombined(line, "RxPackets", "rx_packets", "TxPackets", "tx_packets", "Packets", "packets")
 }
 
 // parseCTLine attempts to parse a single conntrack line and returns a Peer
