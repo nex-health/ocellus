@@ -45,8 +45,8 @@ func TestOnce(t *testing.T) {
 		pods: &corev1.PodList{
 			Items: []corev1.Pod{
 				{
-					ObjectMeta: metav1.ObjectMeta{Name: "cilium-agent-1"},
-					Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+					Name:   "cilium-agent-1",
+					Status: corev1.PodStatus{Phase: corev1.PodRunning},
 				},
 			},
 		},
@@ -107,8 +107,8 @@ func TestOnceSkipsExitedPods(t *testing.T) {
 		pods: &corev1.PodList{
 			Items: []corev1.Pod{
 				{
-					ObjectMeta: metav1.ObjectMeta{Name: "cilium-agent-1"},
-					Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+					Name:   "cilium-agent-1",
+					Status: corev1.PodStatus{Phase: corev1.PodRunning},
 				},
 			},
 		},
