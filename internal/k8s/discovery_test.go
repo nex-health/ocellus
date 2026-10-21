@@ -41,9 +41,9 @@ func TestDiscoverPods_SinglePod(t *testing.T) {
 	client := &mockKubeClient{
 		getPodFn: func(_, name string) (*corev1.Pod, error) {
 			return &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Name: name},
-				Spec:       corev1.PodSpec{NodeName: "node-1"},
-				Status:     corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.1"},
+				Name:   name,
+				Spec:   corev1.PodSpec{NodeName: "node-1"},
+				Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.1"},
 			}, nil
 		},
 	}
@@ -64,8 +64,8 @@ func TestDiscoverPods_SinglePodNotRunning(t *testing.T) {
 	client := &mockKubeClient{
 		getPodFn: func(_, name string) (*corev1.Pod, error) {
 			return &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Name: name},
-				Status:     corev1.PodStatus{Phase: corev1.PodPending},
+				Name:   name,
+				Status: corev1.PodStatus{Phase: corev1.PodPending},
 			}, nil
 		},
 	}
@@ -81,44 +81,34 @@ func TestDiscoverPods_Deployment(t *testing.T) {
 		replicaSets: &appsv1.ReplicaSetList{
 			Items: []appsv1.ReplicaSet{
 				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:            "pgbouncer-abc123",
-						OwnerReferences: []metav1.OwnerReference{{Kind: "Deployment", Name: "pgbouncer"}},
-					},
+					Name:            "pgbouncer-abc123",
+					OwnerReferences: []metav1.OwnerReference{{Kind: "Deployment", Name: "pgbouncer"}},
 				},
 				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:            "other-rs",
-						OwnerReferences: []metav1.OwnerReference{{Kind: "Deployment", Name: "other"}},
-					},
+					Name:            "other-rs",
+					OwnerReferences: []metav1.OwnerReference{{Kind: "Deployment", Name: "other"}},
 				},
 			},
 		},
 		pods: &corev1.PodList{
 			Items: []corev1.Pod{
 				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:            "pgbouncer-abc123-pod1",
-						OwnerReferences: []metav1.OwnerReference{{Kind: "ReplicaSet", Name: "pgbouncer-abc123"}},
-					},
-					Spec:   corev1.PodSpec{NodeName: "node-1"},
-					Status: corev1.PodStatus{PodIP: "10.0.0.1"},
+					Name:            "pgbouncer-abc123-pod1",
+					OwnerReferences: []metav1.OwnerReference{{Kind: "ReplicaSet", Name: "pgbouncer-abc123"}},
+					Spec:            corev1.PodSpec{NodeName: "node-1"},
+					Status:          corev1.PodStatus{PodIP: "10.0.0.1"},
 				},
 				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:            "pgbouncer-abc123-pod2",
-						OwnerReferences: []metav1.OwnerReference{{Kind: "ReplicaSet", Name: "pgbouncer-abc123"}},
-					},
-					Spec:   corev1.PodSpec{NodeName: "node-2"},
-					Status: corev1.PodStatus{PodIP: "10.0.0.2"},
+					Name:            "pgbouncer-abc123-pod2",
+					OwnerReferences: []metav1.OwnerReference{{Kind: "ReplicaSet", Name: "pgbouncer-abc123"}},
+					Spec:            corev1.PodSpec{NodeName: "node-2"},
+					Status:          corev1.PodStatus{PodIP: "10.0.0.2"},
 				},
 				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:            "other-pod",
-						OwnerReferences: []metav1.OwnerReference{{Kind: "ReplicaSet", Name: "other-rs"}},
-					},
-					Spec:   corev1.PodSpec{NodeName: "node-1"},
-					Status: corev1.PodStatus{PodIP: "10.0.0.3"},
+					Name:            "other-pod",
+					OwnerReferences: []metav1.OwnerReference{{Kind: "ReplicaSet", Name: "other-rs"}},
+					Spec:            corev1.PodSpec{NodeName: "node-1"},
+					Status:          corev1.PodStatus{PodIP: "10.0.0.3"},
 				},
 			},
 		},
@@ -138,20 +128,16 @@ func TestDiscoverPods_StatefulSet(t *testing.T) {
 		pods: &corev1.PodList{
 			Items: []corev1.Pod{
 				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:            "postgres-0",
-						OwnerReferences: []metav1.OwnerReference{{Kind: "StatefulSet", Name: "postgres"}},
-					},
-					Spec:   corev1.PodSpec{NodeName: "node-1"},
-					Status: corev1.PodStatus{PodIP: "10.0.0.1"},
+					Name:            "postgres-0",
+					OwnerReferences: []metav1.OwnerReference{{Kind: "StatefulSet", Name: "postgres"}},
+					Spec:            corev1.PodSpec{NodeName: "node-1"},
+					Status:          corev1.PodStatus{PodIP: "10.0.0.1"},
 				},
 				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:            "postgres-1",
-						OwnerReferences: []metav1.OwnerReference{{Kind: "StatefulSet", Name: "postgres"}},
-					},
-					Spec:   corev1.PodSpec{NodeName: "node-2"},
-					Status: corev1.PodStatus{PodIP: "10.0.0.2"},
+					Name:            "postgres-1",
+					OwnerReferences: []metav1.OwnerReference{{Kind: "StatefulSet", Name: "postgres"}},
+					Spec:            corev1.PodSpec{NodeName: "node-2"},
+					Status:          corev1.PodStatus{PodIP: "10.0.0.2"},
 				},
 			},
 		},
@@ -171,12 +157,10 @@ func TestDiscoverPods_DaemonSet(t *testing.T) {
 		pods: &corev1.PodList{
 			Items: []corev1.Pod{
 				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:            "fluentd-abc",
-						OwnerReferences: []metav1.OwnerReference{{Kind: "DaemonSet", Name: "fluentd"}},
-					},
-					Spec:   corev1.PodSpec{NodeName: "node-1"},
-					Status: corev1.PodStatus{PodIP: "10.0.0.1"},
+					Name:            "fluentd-abc",
+					OwnerReferences: []metav1.OwnerReference{{Kind: "DaemonSet", Name: "fluentd"}},
+					Spec:            corev1.PodSpec{NodeName: "node-1"},
+					Status:          corev1.PodStatus{PodIP: "10.0.0.1"},
 				},
 			},
 		},

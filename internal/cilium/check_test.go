@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestCheckInstalled_NoCilium(t *testing.T) {
@@ -25,8 +24,8 @@ func TestCheckInstalled_CiliumPresent(t *testing.T) {
 		pods: &corev1.PodList{
 			Items: []corev1.Pod{
 				{
-					ObjectMeta: metav1.ObjectMeta{Name: "cilium-abc"},
-					Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+					Name:   "cilium-abc",
+					Status: corev1.PodStatus{Phase: corev1.PodRunning},
 				},
 			},
 		},
@@ -42,8 +41,8 @@ func TestCheckInstalled_CiliumNotRunning(t *testing.T) {
 		pods: &corev1.PodList{
 			Items: []corev1.Pod{
 				{
-					ObjectMeta: metav1.ObjectMeta{Name: "cilium-abc"},
-					Status:     corev1.PodStatus{Phase: corev1.PodPending},
+					Name:   "cilium-abc",
+					Status: corev1.PodStatus{Phase: corev1.PodPending},
 				},
 			},
 		},

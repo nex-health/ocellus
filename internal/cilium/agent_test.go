@@ -33,8 +33,8 @@ func TestFindCiliumAgent(t *testing.T) {
 		pods: &corev1.PodList{
 			Items: []corev1.Pod{
 				{
-					ObjectMeta: metav1.ObjectMeta{Name: "cilium-abc"},
-					Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+					Name:   "cilium-abc",
+					Status: corev1.PodStatus{Phase: corev1.PodRunning},
 				},
 			},
 		},
@@ -65,8 +65,8 @@ func TestFindCiliumAgent_NonRunningPod(t *testing.T) {
 		pods: &corev1.PodList{
 			Items: []corev1.Pod{
 				{
-					ObjectMeta: metav1.ObjectMeta{Name: "cilium-pending"},
-					Status:     corev1.PodStatus{Phase: corev1.PodPending},
+					Name:   "cilium-pending",
+					Status: corev1.PodStatus{Phase: corev1.PodPending},
 				},
 			},
 		},

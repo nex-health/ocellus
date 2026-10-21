@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -856,8 +857,8 @@ func TestPodListViewHasBottomDivider(t *testing.T) {
 	lines := strings.Split(view, "\n")
 	// Scan backwards from the end for a divider line (status bar may span multiple lines).
 	found := false
-	for i := len(lines) - 1; i >= 0; i-- {
-		if strings.Contains(lines[i], "─") {
+	for i, line := range slices.Backward(lines) {
+		if strings.Contains(line, "─") {
 			// Make sure this is the bottom divider, not the header divider.
 			// The header divider is near the top (line 1).
 			if i > 2 {
@@ -884,8 +885,8 @@ func TestPeerListViewHasBottomDivider(t *testing.T) {
 	lines := strings.Split(view, "\n")
 	// Scan backwards from the end for a divider line (status bar may span multiple lines).
 	found := false
-	for i := len(lines) - 1; i >= 0; i-- {
-		if strings.Contains(lines[i], "─") {
+	for i, line := range slices.Backward(lines) {
+		if strings.Contains(line, "─") {
 			// Make sure this is the bottom divider, not the header divider.
 			if i > 2 {
 				found = true
