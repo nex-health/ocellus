@@ -40,7 +40,7 @@ chmod +x ocellus
 sudo mv ocellus /usr/local/bin/
 ```
 
-Or install with Go 1.26+:
+Or install with Go 1.27+:
 
 ```sh
 go install github.com/nex-health/ocellus@latest
